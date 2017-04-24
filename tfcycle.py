@@ -2,13 +2,13 @@ import numpy as np
 import random
 import tensorflow as tf
 
-LOG_DIR = './log2/'
-A_DIR = './data/trainA/*'
-B_DIR = './data/trainB/*'
+LOG_DIR = './log/'
+A_DIR = './data/trainA/*.jpg'
+B_DIR = './data/trainB/*.jpg'
 
 BATCH_SIZE = 4
 
-MAX_ITERATION = 1000
+MAX_ITERATION = 100000
 NUM_CRITIC_TRAIN = 4
 
 NUM_THREADS = 2
@@ -19,13 +19,13 @@ LEARNING_RATE = 0.001
 BETA_1 = 0.5
 BETA_2 = 0.9
 
-SUMMARY_PERIOD = 25
+SUMMARY_PERIOD = 50
 
 #=====================================================
 # DEFINE OUR INPUT PIPELINE FOR THE A / B IMAGE GROUPS
 #=====================================================
 
-def input_pipeline(filenames, batch_size, num_epochs=None, image_size=142, crop_size=128):
+def input_pipeline(filenames, batch_size, num_epochs=None, image_size=142, crop_size=256):
 
     with tf.device('/cpu:0'):
         filenames = tf.train.match_filenames_once(filenames)
@@ -53,8 +53,8 @@ def input_pipeline(filenames, batch_size, num_epochs=None, image_size=142, crop_
 
     return images
 
-a = input_pipeline(A_DIR, BATCH_SIZE, 282, 256)
-b = input_pipeline(B_DIR, BATCH_SIZE, 282, 256)
+a = input_pipeline(A_DIR, BATCH_SIZE, image_size=282, crop_size=256)
+b = input_pipeline(B_DIR, BATCH_SIZE, image_size=282, crop_size=256)
 
 #=====================================================
 # DEFINE OUR GENERATOR
@@ -85,11 +85,6 @@ def ResBlock128(outputs, name=None):
         res2 = tf.layers.conv2d(res1, filters=128, kernel_size=3, padding='same', data_format='channels_first', name='rb-conv-2d-2')
         return outputs + res2
 
-# batch training versus testing, resuse=true and is_training=true
-# when double called all need to be fleshed out more...
-# also, an initial padding layer may help quality improvements later
-# adding a tf.pad() then doing a tf.trim() back down....
-# outputs = tf.pad( source, [ [0,0], [1, 1], [1, 1], [0, 0] ], "REFLECT" )
 def build_generator(source, reuse=False) :
 
     batch, channels, image_size, _ = source.get_shape().as_list()
@@ -224,6 +219,9 @@ with tf.variable_scope('discriminator_a') as scope:
     alpha = tf.random_uniform(shape=[BATCH_SIZE,1,1,1], minval=0.,maxval=1.)
     a_hat = alpha * a + (1.0-alpha) * a_generator
 
+    #print("alpha.get_shape()", alpha.get_shape())  #4,3,1,1
+    #print("a_hat.get_shape()", a_hat.get_shape()) #4, 3, 256, 256
+    
     v_a_real = build_discriminator(a)
 
     scope.reuse_variables()
@@ -263,7 +261,7 @@ GP_b = tf.reduce_mean(
 GP = GP_a + GP_b
 
 loss_c = -1.0*W + LAMBDA*GP
-with tf.variable_scope('c_train') :
+with tf.variable_scope('d_train') :
     gvs = d_optimizer.compute_gradients(loss_c,var_list=disc_vars)
     train_d_op = d_optimizer.apply_gradients(gvs)
 
