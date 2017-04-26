@@ -1,11 +1,19 @@
 import numpy as np
 import random
 import tensorflow as tf
+import os
+import sys
+from utils import plot_network_output
 
 LOG_DIR = './log/'
 A_DIR = './data/trainA/*.jpg'
 B_DIR = './data/trainB/*.jpg'
 
+A_TEST_DIR = './data/testA/*.jpg'
+B_TEST_DIR = './data/testB/*.jpg'
+
+#CHECKPT_FILE = './savedModel_inst_big.ckpt'
+CHECKPT_FILE = './savedModel.ckpt'
 BATCH_SIZE = 4
 
 MAX_ITERATION = 100000
@@ -19,14 +27,18 @@ LEARNING_RATE = 0.001
 BETA_1 = 0.5
 BETA_2 = 0.9
 
-SUMMARY_PERIOD = 50
+SUMMARY_PERIOD = 100
+SAVE_PERIOD =  1000 #10000
+
+IS_TEST_MODE = 0
+TEST_SUMMARY_PERIOD = 10
+TEST_BATCH_SIZE = 1
 
 #=====================================================
 # DEFINE OUR INPUT PIPELINE FOR THE A / B IMAGE GROUPS
 #=====================================================
 
 def input_pipeline(filenames, batch_size, num_epochs=None, image_size=142, crop_size=256):
-
     with tf.device('/cpu:0'):
         filenames = tf.train.match_filenames_once(filenames)
         filename_queue = tf.train.string_input_producer(filenames, num_epochs=num_epochs, shuffle=True)
@@ -53,8 +65,14 @@ def input_pipeline(filenames, batch_size, num_epochs=None, image_size=142, crop_
 
     return images
 
-a = input_pipeline(A_DIR, BATCH_SIZE, image_size=282, crop_size=256)
-b = input_pipeline(B_DIR, BATCH_SIZE, image_size=282, crop_size=256)
+if IS_TEST_MODE:
+    a = input_pipeline(A_TEST_DIR, BATCH_SIZE, image_size=282, crop_size=256)
+    b = input_pipeline(B_TEST_DIR, BATCH_SIZE, image_size=282, crop_size=256)
+    BATCH_SIZE = TEST_BATCH_SIZE
+    SUMMARY_PERIOD = TEST_SUMMARY_PERIOD
+else:
+    a = input_pipeline(A_DIR, BATCH_SIZE, image_size=282, crop_size=256)
+    b = input_pipeline(B_DIR, BATCH_SIZE, image_size=282, crop_size=256)
 
 #=====================================================
 # DEFINE OUR GENERATOR
@@ -77,11 +95,10 @@ def instance_normalization(outputs, train=True):
 def ResBlock128(outputs, name=None):
     with tf.variable_scope(name):
         # WE MAY REQUIRED REFLECT PADDING AS IN HERE: https://github.com/vanhuyz/CycleGAN-TensorFlow/blob/master/ops.py
-        res1 = tf.nn.relu(
-            tf.layers.conv2d(outputs, filters=128,kernel_size=3, padding='same', data_format='channels_first', name='rb-conv2d-1')
-        )
-        #res1 = instance_normalization(res1)
-        #res1 = tf.nn.relu(res1)
+        res1 = tf.layers.conv2d(outputs, filters=128,kernel_size=3, padding='same', data_format='channels_first', name='rb-conv2d-1')
+
+        res1 = instance_normalization(res1)
+        res1 = tf.nn.relu(res1)
         res2 = tf.layers.conv2d(res1, filters=128, kernel_size=3, padding='same', data_format='channels_first', name='rb-conv-2d-2')
         return outputs + res2
 
@@ -166,7 +183,6 @@ with tf.variable_scope('generator_A2B',reuse=True) :
 #=====================================================
 # DEFINE OUR DISCRIMINATOR
 #=====================================================
-
 def lrelu(outputs, name="lr"):
     return tf.maximum(outputs, 0.2*outputs, name=name)
 
@@ -243,7 +259,6 @@ gen_vars = [v for v in tf.trainable_variables() if v.name.startswith('generator_
 #=====================================================
 # DEFINE OUR LOSS FUNCTION
 #=====================================================
-
 d_optimizer = tf.train.AdamOptimizer(LEARNING_RATE,BETA_1,BETA_2)
 g_optimizer = tf.train.AdamOptimizer(LEARNING_RATE,BETA_1,BETA_2)
 
@@ -275,9 +290,10 @@ loss_cycle_b = tf.reduce_mean(
     tf.reduce_mean(tf.abs(b - b_identity),reduction_indices=[1,2,3])) # following the paper implementation.(divide by #pixels)
 loss_cycle = loss_cycle_a + loss_cycle_b
 
-with tf.variable_scope('g_train') :
-    gvs = g_optimizer.compute_gradients(loss_g+LAMBDA_CYCLE*loss_cycle,var_list=gen_vars)
-    train_g_op  = g_optimizer.apply_gradients(gvs)
+if IS_TEST_MODE != 1:
+    with tf.variable_scope('g_train') :
+        gvs = g_optimizer.compute_gradients(loss_g+LAMBDA_CYCLE*loss_cycle,var_list=gen_vars)
+        train_g_op  = g_optimizer.apply_gradients(gvs)
 
 #=====================================================
 # SETUP TENSORBOARD
@@ -298,16 +314,27 @@ tf.summary.scalar('loss_cycle', loss_cycle)
 # Summary Operations
 summary_op = tf.summary.merge_all()
 
+# Saver
+saver = tf.train.Saver(max_to_keep = 5)
+
 #=====================================================
 # TRAIN OUR MODEL
 #=====================================================
-
 sess = tf.Session()
 sess.run(tf.local_variables_initializer())
 sess.run(tf.global_variables_initializer())
 
+
+def get_script_path():
+    return os.path.dirname(os.path.realpath(sys.argv[0]))
+
 try:
-    summary_writer = tf.summary.FileWriter(LOG_DIR, sess.graph)
+    if IS_TEST_MODE:
+        summary_writer = tf.summary.FileWriter(LOG_DIR + "test/", sess.graph)
+        #saver.restore(sess,os.path.join(get_script_path(),LOG_DIR, 'model.ckpt'))
+        saver.restore(sess, CHECKPT_FILE)
+    else:
+        summary_writer = tf.summary.FileWriter(LOG_DIR, sess.graph)
 
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -315,19 +342,30 @@ try:
         if coord.should_stop():
             break
 
-        for _ in range(NUM_CRITIC_TRAIN):
-            _ = sess.run(train_d_op)
 
-        W_eval, GP_eval, loss_g_eval, loss_cycle_eval, _ = sess.run(
-            [W,GP,loss_g,loss_cycle,train_g_op])
+        if IS_TEST_MODE:
+            W_eval, GP_eval, loss_g_eval, loss_cycle_eval, genratedA, generatedB, realA, realB = sess.run(
+            [W,GP,loss_g,loss_cycle, tf.transpose(a_generator,perm=[0,2,3,1]), tf.transpose(b_generator,perm=[0,2,3,1]),
+             tf.transpose(a, perm=[0, 2, 3, 1]), tf.transpose(b,perm=[0,2,3,1])])
+            plot_network_output(realA, generatedB, realB, generatedB, step)
+        else:
+
+            for _ in range(NUM_CRITIC_TRAIN):
+                _ = sess.run(train_d_op)
+            W_eval, GP_eval, loss_g_eval, loss_cycle_eval, _, genratedA, generatedB = sess.run(
+            [W,GP,loss_g,loss_cycle,train_g_op, a_generator, b_generator])
 
         print('%7d : W : %1.6f, GP : %1.6f, Loss G : %1.6f, Loss Cycle : %1.6f'%(
             step,W_eval,GP_eval,loss_g_eval,loss_cycle_eval))
+
 
         if( step % SUMMARY_PERIOD == 0 ) :
             summary_str = sess.run(summary_op)
             summary_writer.add_summary(summary_str, step)
             summary_writer.flush()
+        if (step > 0 and step % SAVE_PERIOD == 0):
+            print("Saving model...")
+            saver.save(sess, CHECKPT_FILE)
 
 except Exception as e:
     coord.request_stop(e)
