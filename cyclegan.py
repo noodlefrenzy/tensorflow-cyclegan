@@ -22,9 +22,9 @@ B_TEST_DIR = './data/testB/*.jpg'
 
 MAX_TRAIN_TIME_MINS = 600
 
-SAMPLE_STEP = 50
-SAVE_STEP = 100
-TIME_CHECK_STEP = 10
+SAMPLE_STEP = 10
+SAVE_STEP = 500
+TIME_CHECK_STEP = 100
 
 L1_lambda = 10
 LEARNING_RATE = 0.0002
@@ -36,7 +36,24 @@ totalEpochs = 200
 
 CHECKPOINT_FILE = './checkpoint/cyclegan.ckpt'
 
+# READ INPUT PARAMS
+def parseArguments():
+    # Create argument parser
+    parser = argparse.ArgumentParser()
 
+    # Optional arguments
+    parser.add_argument("-tA", "--trainA", help="Path to  trainA dir.", type=str, default=A_DIR)
+    parser.add_argument("-tB", "--trainB", help="Path to  trainB dir.", type=str, default=B_DIR)
+    parser.add_argument("-ttA", "--testA", help="Path to  testA dir.", type=str, default=A_TEST_DIR)
+    parser.add_argument("-ttB", "--testB", help="Path to  testB dir.", type=str, default=B_TEST_DIR)
+    parser.add_argument("-t", "--time", help="Max time (mins) to run training", type=int, default=60 * 10)
+    parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
+    parser.add_argument("-c", "--check", help="Location of checkpoint  file where model will be stored", type=str, default=CHECKPOINT_FILE)
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    return args
 # DEFINE OUR LOAD DATA OPERATIONS
 # -------------------------------------------------------
 def load_data(image_path, flip=True, is_test=False):
@@ -109,8 +126,8 @@ def load_sample_data(image_path):
 
 
 def sample_model(epoch, idx):
-    testA = glob('./data/testA/*.jpg')
-    testB = glob('./data/testB/*.jpg')
+    testA = glob(A_TEST_DIR)
+    testB = glob(B_TEST_DIR)
     np.random.shuffle(testA)
     np.random.shuffle(testB)
 
@@ -255,23 +272,6 @@ def discriminator(image, reuse=False, name="discriminator"):
         return h4
 
 
-# READ INPUT PARAMS
-def parseArguments():
-    # Create argument parser
-    parser = argparse.ArgumentParser()
-
-    # Optional arguments
-    parser.add_argument("-tA", "--trainA", help="Path to  trainA dir.", type=str, default=A_DIR)
-    parser.add_argument("-tB", "--trainB", help="Path to  trainB dir.", type=str, default=B_DIR)
-    parser.add_argument("-t", "--time", help="Max time (mins) to run training", type=int, default=60 * 10)
-    parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
-    parser.add_argument("-c", "--check", help="Location of checkpoint  file where model will be stored", type=str, default=CHECKPOINT_FILE)
-
-    # Parse arguments
-    args = parser.parse_args()
-
-    return args
-
 args = parseArguments()
 
 # Raw print arguments
@@ -281,6 +281,8 @@ for a in args.__dict__:
 
 A_DIR = args.trainA
 B_DIR = args.trainB
+A_TEST_DIR = args.testA
+B_TEST_DIR = args.testB
 MAX_TRAIN_TIME_MINS = args.time
 LEARNING_RATE = args.lrate
 CHECKPOINT_FILE = args.check
