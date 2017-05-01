@@ -372,7 +372,7 @@ F_optim = tf.train.AdamOptimizer( LEARNING_RATE, MOMENTUM) \
 saver = tf.train.Saver(tf.all_variables(), max_to_keep = 5)
 
 sess = tf.Session()
-sess.run(initialize_all_variables())
+sess.run(tf.initialize_all_variables())
 
 ckpt = tf.train.get_checkpoint_state('./checkpoint/')
 
