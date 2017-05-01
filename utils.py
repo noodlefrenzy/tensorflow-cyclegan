@@ -2,6 +2,7 @@ import os
 import numpy as np
 from IPython import get_ipython
 import time
+from shutil import copyfile
 
 import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
@@ -60,3 +61,37 @@ def plot_network_output(real_A, fake_B, real_B, fake_A, iteration):
 def create_image(im):
     # scale the pixel values from [-1,1] to [0,1]
     return (im + 1) / 2
+
+def create_traintest(inputdir,outputdir='./data',AB='A',train_frac = 0.75, shuffle_seed=None):
+    '''
+    inputs:
+        inputdir - directory with images of one class (ex: sunny_beach or cloudy_beach)
+        outputdir - directory to save the new train/test directories to. Default is cwd/data
+        AB - for GANS, rename to either class 'A' or class 'B'
+        train_frac - fraction of images in train vs test set
+        shuffle_seed - define random seed to make train/test split repeatable
+
+    outputs:
+        New directories in current working directory of testA, testB, trainA, trainB
+    '''
+    
+    #read in list of all files in inputdir and shuffle
+    if shuffle_seed:
+        np.random.seed(shuffle_seed)
+    all_files = os.listdir(inputdir)
+    np.random.shuffle(np.array(all_files))
+
+    #seperate train/test lists
+    train_size = np.int(len(all_files) * train_frac)
+    train_files = all_files[:train_size]
+    test_files = all_files[train_size:]
+
+    #create output directories and move image files to respective train/test dirs
+    os.makedirs(os.path.join(outputdir,'train'+AB),exist_ok=True)
+    for file in train_files:
+        copyfile(os.path.join(inputdir,file),os.path.join(outputdir,'train'+AB,file))
+    os.makedirs(os.path.join(outputdir,'test'+AB),exist_ok=True)
+    for file in test_files:
+        copyfile(os.path.join(inputdir,file),os.path.join(outputdir,'test'+AB,file))
+
+
