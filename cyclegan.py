@@ -130,12 +130,6 @@ def batch_norm(x, name="batch_norm"):
 
 def conv2d(input_, output_dim, ks=4, s=2, stddev=0.02, padding='SAME', name="conv2d", reuse=False):
     with tf.variable_scope(name):
-
-        '''
-        return slim.conv2d(input_, output_dim, ks, s, padding=padding, activation_fn=None,
-                            weights_initializer=tf.truncated_normal_initializer(stddev=stddev),
-                            biases_initializer=None)
-        '''
         return tf.layers.conv2d(input_, 
             filters=output_dim,kernel_size=ks, strides=(s, s), 
             padding=padding, kernel_initializer=tf.truncated_normal_initializer(stddev=stddev),
@@ -143,11 +137,6 @@ def conv2d(input_, output_dim, ks=4, s=2, stddev=0.02, padding='SAME', name="con
 
 def deconv2d(input_, output_dim, ks=4, s=2, stddev=0.02, name="deconv2d", reuse=False):
     with tf.variable_scope(name):
-        '''
-        return slim.conv2d_transpose(input_, output_dim, ks, s, padding='SAME', activation_fn=None,
-                                    weights_initializer=tf.truncated_normal_initializer(stddev=stddev),
-                                    biases_initializer=None)
-        '''
         return tf.layers.conv2d_transpose(input_, 
             filters=output_dim,kernel_size=ks, strides=(s, s), padding='SAME', 
             kernel_initializer=tf.truncated_normal_initializer(stddev=stddev),
@@ -194,7 +183,7 @@ def generator(image, reuse=False, name="generator"):
             tf.variable_scope(tf.get_variable_scope(), reuse=False)
             assert tf.get_variable_scope().reuse == False
 
-        def residule_block(x, dim, ks=3, s=1, name='res'):
+        def residule_block(x, dim, ks=3, s=1, name='res', reuse=reuse):
             p = int((ks - 1) / 2)
             y = tf.pad(x, [[0, 0], [p, p], [p, p], [0, 0]], "REFLECT")
             y = batch_norm(conv2d(y, dim, ks, s, padding='VALID', name=name+'_c1', reuse=reuse), name+'_bn1')
@@ -211,15 +200,15 @@ def generator(image, reuse=False, name="generator"):
         c2 = tf.nn.relu(batch_norm(conv2d(c1, 64, 3, 2, name='g_e2_c', reuse=reuse), 'g_e2_bn'))
         c3 = tf.nn.relu(batch_norm(conv2d(c2, 128, 3, 2, name='g_e3_c', reuse=reuse), 'g_e3_bn'))
         # define G network with 9 resnet blocks
-        r1 = residule_block(c3, 128, name='g_r1')
-        r2 = residule_block(r1, 128, name='g_r2')
-        r3 = residule_block(r2, 128, name='g_r3')
-        r4 = residule_block(r3, 128, name='g_r4')
-        r5 = residule_block(r4, 128, name='g_r5')
-        r6 = residule_block(r5, 128, name='g_r6')
-        r7 = residule_block(r6, 128, name='g_r7')
-        r8 = residule_block(r7, 128, name='g_r8')
-        r9 = residule_block(r8, 128, name='g_r9')
+        r1 = residule_block(c3, 128, name='g_r1', reuse=reuse)
+        r2 = residule_block(r1, 128, name='g_r2', reuse=reuse)
+        r3 = residule_block(r2, 128, name='g_r3', reuse=reuse)
+        r4 = residule_block(r3, 128, name='g_r4', reuse=reuse)
+        r5 = residule_block(r4, 128, name='g_r5', reuse=reuse)
+        r6 = residule_block(r5, 128, name='g_r6', reuse=reuse)
+        r7 = residule_block(r6, 128, name='g_r7', reuse=reuse)
+        r8 = residule_block(r7, 128, name='g_r8', reuse=reuse)
+        r9 = residule_block(r8, 128, name='g_r9', reuse=reuse)
 
         d1 = deconv2d(r9, 64, 3, 2, name='g_d1_dc',  reuse=reuse)
         d1 = tf.nn.relu(batch_norm(d1, 'g_d1_bn'))
