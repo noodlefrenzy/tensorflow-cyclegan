@@ -44,3 +44,35 @@ def plot_network_output(real_A, fake_B, real_B, fake_A, iteration):
 def create_image(im):
     # scale the pixel values from [-1,1] to [0,1]
     return (im + 1) / 2
+
+def create_traintest(inputdir,outputdir='./data',AB='A',train_frac = 0.75):
+    '''
+    inputs:
+        inputdir - directory with images of one class (ex: sunny_beach or cloudy_beach)
+        outputdir - directory to save the new train/test directories to. Default is cwd/data
+        AB - for GANS, rename to either class 'A' or class 'B'
+        train_frac - fraction of images in train vs test set
+
+    outputs:
+        New directories in current working directory of testA, testB, trainA, trainB
+    '''
+    #read in list of all files in inputdir and shuffle
+    all_files = os.listdir(inputdir)
+    np.random.shuffle(np.array(all_files))
+
+    #seperate train/test lists
+    train_size = np.int(len(all_files) * train_frac)
+    train_files = all_files[:train_size]
+    test_files = all_files[train_size:]
+
+    #create output directories and move image files to respective train/test dirs
+    if not os.path.isdir(os.path.join(outputdir,'train'+AB)):
+        os.mkdir(os.path.join(outputdir,'train'+AB))
+    for file in train_files:
+        os.rename(os.path.join(inputdir,file),os.path.join(outputdir,'train'+AB,file))
+    if not os.path.isdir(os.path.join(outputdir,'test'+AB)):
+        os.mkdir(os.path.join(outputdir,'test'+AB))
+    for file in test_files:
+        os.rename(os.path.join(inputdir,file),os.path.join(outputdir,'test'+AB,file))
+
+
