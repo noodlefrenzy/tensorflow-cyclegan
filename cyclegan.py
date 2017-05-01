@@ -17,8 +17,8 @@ B_DIR = './data/trainB/*.jpg'
 A_TEST_DIR = './data/testA/*.jpg'
 B_TEST_DIR = './data/testB/*.jpg'
 
-SAMPLE_STEP = 40
-SAVE_STEP = 200
+SAMPLE_STEP = 500
+SAVE_STEP = 2000
 
 L1_lambda = 10
 LEARNING_RATE = 0.0002
@@ -115,10 +115,10 @@ def sample_model(epoch, idx):
 	generated_X_sample, generated_Y_sample = sess.run(
 		[ genF, genG ], feed_dict={real_data: sample_images} )
 
-	scipy.misc.imsave( './samples/Y_{:02d}_{:04d}.jpg'.format(epoch, idx),
+	scipy.misc.imsave( './samples/fake_{:02d}_{:04d}_ZEBRA.jpg'.format(epoch, idx),
 		merge( inverse_transform( generated_Y_sample), [1,1] ))
 
-	scipy.misc.imsave( './samples/X_{:02d}_{:04d}.jpg'.format(epoch, idx),
+	scipy.misc.imsave( './samples/fake_{:02d}_{:04d}_HORSE.jpg'.format(epoch, idx),
 		merge( inverse_transform( generated_X_sample), [1,1] ))
 
 
@@ -369,15 +369,16 @@ F_optim = tf.train.AdamOptimizer( LEARNING_RATE, MOMENTUM) \
 # CREATE AND RUN OUR TRAINING LOOP
 # -------------------------------------------------------
 
-saver = tf.train.Saver(max_to_keep = 5)
+saver = tf.train.Saver(tf.all_variables(), max_to_keep = 5)
 
 sess = tf.Session()
+sess.run(initialize_all_variables())
 
-ckpt = tf.train.get_checkpoint_state(CHECKPOINT_FILE)
+ckpt = tf.train.get_checkpoint_state('./checkpoint/')
 
-if ckpt and tf.gfile.Exists(ckpt.model_checkpoint_path):
-    print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
+if ckpt and ckpt.model_checkpoint_path:
     saver.restore(sess, ckpt.model_checkpoint_path)
+    print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
 else:
     print("Created model with fresh parameters.")
     sess.run(tf.global_variables_initializer())
