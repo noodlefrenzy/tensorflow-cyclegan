@@ -1,9 +1,25 @@
 import os
 import numpy as np
 from IPython import get_ipython
+import time
 from shutil import copyfile
 
 import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+
+class Timer():
+  def __init__(self):
+    self.start_time = time.time()
+
+  def elapsed_reset(self):
+    duration = self.elapsed()
+    self.start_time = time.time()
+    return duration
+
+  def elapsed(self):
+    end_time = time.time()
+    duration = end_time - self.start_time
+    return duration
 
 
 def isnotebook():
