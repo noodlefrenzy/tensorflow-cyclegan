@@ -30,6 +30,8 @@ counter = 1
 start_time = time.time()
 totalEpochs = 200
 
+SOFT_LABELS = False
+
 CHECKPOINT_FILE = './checkpoint/cyclegan.ckpt'
 
 # READ INPUT PARAMS
@@ -45,6 +47,7 @@ def parseArguments():
 	parser.add_argument("-t", "--time", help="Max time (mins) to run training", type=int, default=60 * 10)
 	parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
 	parser.add_argument("-c", "--check", help="Location of checkpoint  file where model will be stored", type=str, default=CHECKPOINT_FILE)
+	parser.add_argument("-sl", "--softL", help="real labels are random about 1.", type=bool, default=SOFT_LABELS)
 
 	# Parse arguments
 	args = parser.parse_args()
@@ -308,6 +311,16 @@ B_TEST_DIR = args.testB
 MAX_TRAIN_TIME_MINS = args.time
 LEARNING_RATE = args.lrate
 CHECKPOINT_FILE = args.check
+SOFT_LABELS = args.softL
+
+if SOFT_LABELS:
+	np.random.seed(1234)
+	softL_c = np.random.normal(1,0.05)
+	if softL_c > 1.15: softL_c = 1.15
+	if softL_c < 0.85: softL_c = 0.85
+else:
+	softL_c = 1.0
+print('Soft Labeling: ', softL_c)
 
 # DEFINE OUR MODEL AND LOSS FUNCTIONS
 # -------------------------------------------------------
@@ -330,11 +343,11 @@ genG_back = generator(genF, name="generatorG", reuse=True)
 discY_fake = discriminator(genG, reuse=False, name="discY")
 discX_fake = discriminator(genF, reuse=False, name="discX")
 
-g_loss_G = tf.reduce_mean((discY_fake - tf.ones_like(discY_fake)) ** 2) \
+g_loss_G = tf.reduce_mean((discY_fake - tf.ones_like(discY_fake)*softL_c) ** 2) \
 		   + L1_lambda * tf.reduce_mean(tf.abs(real_X - genF_back)) \
 		   + L1_lambda * tf.reduce_mean(tf.abs(real_Y - genG_back))
 
-g_loss_F = tf.reduce_mean((discX_fake - tf.ones_like(discX_fake)) ** 2) \
+g_loss_F = tf.reduce_mean((discX_fake - tf.ones_like(discX_fake)*softL_c) ** 2) \
 		   + L1_lambda * tf.reduce_mean(tf.abs(real_X - genF_back)) \
 		   + L1_lambda * tf.reduce_mean(tf.abs(real_Y - genG_back))
 
@@ -342,17 +355,17 @@ fake_X_sample = tf.placeholder(tf.float32, [None, 256, 256, 3], name="fake_X_sam
 fake_Y_sample = tf.placeholder(tf.float32, [None, 256, 256, 3], name="fake_Y_sample")
 
 # DY is the discriminator for Y that takes in Y
-# DX is the discriminator for X that takes in XD
+# DX is the discriminator for X that takes in X
 DY = discriminator(real_Y, reuse=True, name="discY")
 DX = discriminator(real_X, reuse=True, name="discX")
 DY_fake_sample = discriminator(fake_Y_sample, reuse=True, name="discY")
 DX_fake_sample = discriminator(fake_X_sample, reuse=True, name="discX")
 
-DY_loss_real = tf.reduce_mean((DY - tf.ones_like(DY)) ** 2)
+DY_loss_real = tf.reduce_mean((DY - tf.ones_like(DY)*softL_c) ** 2)
 DY_loss_fake = tf.reduce_mean((DY_fake_sample - tf.zeros_like(DY_fake_sample)) ** 2)
 DY_loss = (DY_loss_real + DY_loss_fake) / 2
 
-DX_loss_real = tf.reduce_mean((DX - tf.ones_like(DX)) ** 2)
+DX_loss_real = tf.reduce_mean((DX - tf.ones_like(DX)*softL_c) ** 2)
 DX_loss_fake = tf.reduce_mean((DX_fake_sample - tf.zeros_like(DX_fake_sample)) ** 2)
 DX_loss = (DX_loss_real + DX_loss_fake) / 2
 
