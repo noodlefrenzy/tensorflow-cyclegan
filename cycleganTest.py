@@ -3,16 +3,35 @@ from glob import glob
 from six.moves import xrange
 import numpy as np
 import scipy.misc
+import argparse
+import os
 
 import tensorflow as tf
 
-A_TEST_DIR = './data/testA/*.jpg'
-B_TEST_DIR = './data/testB/*.jpg'
+A_TEST_DIR = './data/testA'
+B_TEST_DIR = './data/testB'
 
 counter = 1
 start_time = time.time()
 
-CHECKPOINT_FILE = './checkpoint/cyclegan.ckpt'
+CHECKPOINT_FILE = './checkpoint'
+SAMPLES_DIR = './samples'
+
+# READ INPUT PARAMS
+def parseArguments():
+	# Create argument parser
+    parser = argparse.ArgumentParser()
+
+    # Optional arguments
+    parser.add_argument("-A", "--testA", help="Path to  testA dir.", type=str, default=A_TEST_DIR)
+    parser.add_argument("-B", "--testB", help="Path to  testB dir.", type=str, default=B_TEST_DIR)
+    parser.add_argument("-c", "--check", help="Location of checkpoint file to be used", type=str, default=CHECKPOINT_FILE)
+    parser.add_argument("-s", "--samples", help="Location of samples dir. to be used", type=str, default=SAMPLES_DIR)
+
+	# Parse arguments
+    args = parser.parse_args()
+
+    return args
 
 # DEFINE OUR LOAD DATA OPERATIONS
 # -------------------------------------------------------
@@ -196,7 +215,19 @@ saver = tf.train.Saver(tf.all_variables(), max_to_keep=5)
 sess = tf.Session()
 sess.run(tf.initialize_all_variables())
 
-ckpt = tf.train.get_checkpoint_state('./checkpoint/')
+args = parseArguments()
+
+# Raw print arguments
+print("You are running the script with arguments: ")
+for a in args.__dict__:
+	print(str(a) + ": " + str(args.__dict__[a]))
+
+A_TEST_DIR = args.testA
+B_TEST_DIR = args.testB
+CHECKPOINT_FILE = args.check
+SAMPLES_DIR = args.samples
+
+ckpt = tf.train.get_checkpoint_state(CHECKPOINT_FILE)
 
 if ckpt and ckpt.model_checkpoint_path:
     saver.restore(sess, ckpt.model_checkpoint_path)
@@ -207,8 +238,8 @@ else:
 
 writer = tf.summary.FileWriter("./log", sess.graph)
 
-dataX = glob(A_TEST_DIR)
-dataY = glob(B_TEST_DIR)
+dataX = glob(A_TEST_DIR + '/*.jpg')
+dataY = glob(B_TEST_DIR + '/*.jpg')
 
 np.random.shuffle(dataX)
 np.random.shuffle(dataY)
@@ -223,9 +254,9 @@ for idx in xrange(0, batch_idxs):
     generated_X, generated_Y = sess.run([genF, genG],
                                         feed_dict={real_data: batch_images})
 
-    scipy.misc.imsave('./samples/gen_{:04d}_Y.jpg'.format(idx), merge(inverse_transform(generated_Y), [1, 1]))
+    scipy.misc.imsave('{0}/gen_{1:04d}_Y.jpg'.format(SAMPLES_DIR, idx), merge(inverse_transform(generated_Y), [1, 1]))
 
-    scipy.misc.imsave('./samples/gen_{:04d}_X.jpg'.format(idx), merge(inverse_transform(generated_X), [1, 1]))
+    scipy.misc.imsave('{0}/gen_{1:04d}_X.jpg'.format(SAMPLES_DIR, idx), merge(inverse_transform(generated_X), [1, 1]))
 
     counter += 1
     print("Step: [%2d] time: %4.4f" % (idx, time.time() - start_time))
