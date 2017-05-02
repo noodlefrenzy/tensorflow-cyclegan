@@ -1,0 +1,9 @@
+*.jpg
+*.png
+*.OLGALIRAZOR
+log
+checkpoint
+data
+.idea
+__pycache__
+samples
