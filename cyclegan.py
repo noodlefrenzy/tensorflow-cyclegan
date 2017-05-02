@@ -10,6 +10,10 @@ import argparse
 import tensorflow as tf
 import utils
 
+#ensure reproducability
+random_seed = 1234
+np.random.seed(random_seed)
+
 LOG_DIR = './log/'
 A_DIR = './data/trainA/*.jpg'
 B_DIR = './data/trainB/*.jpg'
@@ -47,7 +51,7 @@ def parseArguments():
 	parser.add_argument("-t", "--time", help="Max time (mins) to run training", type=int, default=60 * 10)
 	parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
 	parser.add_argument("-c", "--check", help="Location of checkpoint  file where model will be stored", type=str, default=CHECKPOINT_FILE)
-	parser.add_argument("-sl", "--softL", help="real labels are random about 1.", type=bool, default=SOFT_LABELS)
+	parser.add_argument("-sl", "--softL", help="Set to True for random real labels around 1.0", type=bool, default=SOFT_LABELS)
 
 	# Parse arguments
 	args = parser.parse_args()
@@ -314,7 +318,6 @@ CHECKPOINT_FILE = args.check
 SOFT_LABELS = args.softL
 
 if SOFT_LABELS:
-	np.random.seed(1234)
 	softL_c = np.random.normal(1,0.05)
 	if softL_c > 1.15: softL_c = 1.15
 	if softL_c < 0.85: softL_c = 0.85
