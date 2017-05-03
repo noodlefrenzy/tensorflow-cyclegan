@@ -34,7 +34,6 @@ SOFT_LABELS = False
 
 CHECKPOINT_FILE = './checkpoint/cyclegan.ckpt'
 
-
 # READ INPUT PARAMS
 def parseArguments():
     # Create argument parser
@@ -46,6 +45,8 @@ def parseArguments():
                         help="Input prefix for tfrecords files.", required=True)
     parser.add_argument("-t", "--time", help="Max time (mins) to run training", type=int, default=60 * 10)
     parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
+    parser.add_argument('--end-lr', help='Ending learning rate (for decay)', type=float, default=0.0, dest='end_lr')
+    parser.add_argument('--lr-decay-start', help='When (what step) to start decaying LR', type=int, default=100000, dest='lr_decay_start')
     parser.add_argument("-c", "--check", help="Location of checkpoint  file where model will be stored", type=str,
                         default=CHECKPOINT_FILE)
     parser.add_argument("-sl", "--softL", help="Set to True for random real labels around 1.0", action='store_true',
@@ -54,6 +55,7 @@ def parseArguments():
                         dest='batch_size')
     parser.add_argument('-s', '--sample', '--sample-freq', dest='sample_freq', help='How often to write out sample images', type=int, default=SAMPLE_STEP)
     parser.add_argument('--checkpoint-freq', dest='checkpoint_freq', help='How often to save to the checkpoint file', type=int, default=SAVE_STEP)
+    parser.add_argument('--ignore', '--ignore-checkpoint', dest='ignore_checkpoint', help='Ignore existing checkpoint file and start from scratch', action='store_true')
 
     # Parse arguments
     args = parser.parse_args()
@@ -310,6 +312,9 @@ else:
     softL_c = 1.0
 print('Soft Labeling: ', softL_c)
 
+
+sess = tf.Session()
+
 # DEFINE OUR MODEL AND LOSS FUNCTIONS
 # -------------------------------------------------------
 
@@ -373,63 +378,77 @@ g_vars_F = [v for v in t_vars if 'generatorF' in v.name]
 # SETUP OUR SUMMARY VARIABLES FOR MONITORING
 # -------------------------------------------------------
 
-G_sum = tf.summary.scalar("g_loss_G", g_loss_G)
-F_sum = tf.summary.scalar("g_loss_F", g_loss_F)
-DY_loss_sum = tf.summary.scalar("DY_loss", DY_loss)
-DX_loss_sum = tf.summary.scalar("DX_loss", DX_loss)
-DY_loss_real_sum = tf.summary.scalar("DY_loss_real", DY_loss_real)
-DY_loss_fake_sum = tf.summary.scalar("DY_loss_fake", DY_loss_fake)
-DX_loss_real_sum = tf.summary.scalar("DX_loss_real", DX_loss_real)
-DX_loss_fake_sum = tf.summary.scalar("DX_loss_fake", DX_loss_fake)
+G_loss_sum = tf.summary.scalar("loss/G", g_loss_G)
+F_loss_sum = tf.summary.scalar("loss/F", g_loss_F)
+DY_loss_sum = tf.summary.scalar("loss/DY", DY_loss)
+DX_loss_sum = tf.summary.scalar("loss/DX", DX_loss)
+DY_loss_real_sum = tf.summary.scalar("loss/DY_real", DY_loss_real)
+DY_loss_fake_sum = tf.summary.scalar("loss/DY_fake", DY_loss_fake)
+DX_loss_real_sum = tf.summary.scalar("loss/DX_real", DX_loss_real)
+DX_loss_fake_sum = tf.summary.scalar("loss/DX_fake", DX_loss_fake)
 
 imgX = tf.summary.image('real_X', tf.transpose(real_X, perm=[0, 2, 3, 1]), max_outputs=3)
 imgG = tf.summary.image('genG', tf.transpose(genG, perm=[0, 2, 3, 1]), max_outputs=3)
 imgY = tf.summary.image('real_Y', tf.transpose(real_Y, perm=[0, 2, 3, 1]), max_outputs=3)
 imgF = tf.summary.image('genF', tf.transpose(genF, perm=[0, 2, 3, 1]), max_outputs=3)
 
+# SETUP OUR TRAINING
+# -------------------------------------------------------
+
+def adam(loss, variables, start_lr, end_lr, lr_decay_start, start_beta, name_prefix):
+    name = name_prefix + '_adam'
+    global_step = tf.Variable(0, trainable=False)
+    # The paper recommends learning at a fixed rate for several steps, and then linearly stepping down to 0
+    learning_rate = (tf.where(tf.greater_equal(global_step, lr_decay_start),
+                              tf.train.polynomial_decay(start_lr, global_step - lr_decay_start, lr_decay_start, end_lr,
+                                                        power=1.0),
+                              start_lr))
+    lr_sum = tf.summary.scalar('learning_rate/{}'.format(name), learning_rate)
+
+    learning_step = (tf.train.AdamOptimizer(learning_rate, beta1=start_beta, name=name).minimize(
+        loss, global_step=global_step, var_list=variables))
+    return learning_step, lr_sum
+
+DX_optim, DX_lr = adam(DX_loss, DX_vars, LEARNING_RATE, args.end_lr, args.lr_decay_start, MOMENTUM, 'D_X')
+
+DY_optim, DY_lr = adam(DY_loss, DY_vars, LEARNING_RATE, args.end_lr, args.lr_decay_start, MOMENTUM, 'D_Y')
+
+G_optim, G_lr = adam(g_loss_G, g_vars_G, LEARNING_RATE, args.end_lr, args.lr_decay_start, MOMENTUM, 'G')
+
+F_optim, F_lr = adam(g_loss_F, g_vars_F, LEARNING_RATE, args.end_lr, args.lr_decay_start, MOMENTUM, 'F')
+
+G_sum = tf.summary.merge(
+    [G_loss_sum, G_lr]
+)
+F_sum = tf.summary.merge(
+    [F_loss_sum, F_lr]
+)
 DY_sum = tf.summary.merge(
-    [DY_loss_sum, DY_loss_real_sum, DY_loss_fake_sum]
+    [DY_loss_sum, DY_loss_real_sum, DY_loss_fake_sum, DY_lr]
 )
 DX_sum = tf.summary.merge(
-    [DX_loss_sum, DX_loss_real_sum, DX_loss_fake_sum]
+    [DX_loss_sum, DX_loss_real_sum, DX_loss_fake_sum, DX_lr]
 )
 
 images_sum = tf.summary.merge([imgX, imgG, imgY, imgF])
 
-# SETUP OUR TRAINING
-# -------------------------------------------------------
-
-DX_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
-    .minimize(DX_loss, var_list=DX_vars)
-
-DY_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
-    .minimize(DY_loss, var_list=DY_vars)
-
-G_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
-    .minimize(g_loss_G, var_list=g_vars_G)
-
-F_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
-    .minimize(g_loss_F, var_list=g_vars_F)
-
 # CREATE AND RUN OUR TRAINING LOOP
 # -------------------------------------------------------
-
-saver = tf.train.Saver(tf.global_variables(), max_to_keep=5)
 
 print("Starting the time")
 timer = utils.Timer()
 
-sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 
-# ckpt = tf.train.get_checkpoint_state('./checkpoint/')
-#
-# if ckpt and ckpt.model_checkpoint_path:
-#     saver.restore(sess, ckpt.model_checkpoint_path)
-#     print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
-# else:
-#     print("Created model with fresh parameters.")
-sess.run(tf.global_variables_initializer())
+saver = tf.train.Saver(tf.global_variables())
+ckpt = tf.train.get_checkpoint_state('./checkpoint/')
+
+if ckpt and ckpt.model_checkpoint_path and not args.ignore_checkpoint:
+    saver.restore(sess, ckpt.model_checkpoint_path)
+    print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
+else:
+    print("Created model with fresh parameters.")
+
 coord = tf.train.Coordinator()
 threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
@@ -438,8 +457,8 @@ writer = tf.summary.FileWriter(LOG_DIR, sess.graph)
 cache_X = ImageCache(50)
 cache_Y = ImageCache(50)
 
+counter = 0
 try:
-    counter = 0
     while not coord.should_stop():
 
         # FORWARD PASS
@@ -450,18 +469,20 @@ try:
         writer.add_summary(summary_str, counter)
 
         # UPDATE DY
-        _, summary_str = sess.run([DY_optim, DY_sum],
-                                  feed_dict={fake_Y_sample: cache_Y.fetch(generated_Y)})
+        _ = sess.run([DY_optim, DY_sum],
+                      feed_dict={fake_Y_sample: cache_Y.fetch(generated_Y)})
         writer.add_summary(summary_str, counter)
 
         # UPDATE F
-        _, summary_str = sess.run([F_optim, F_sum])
+        _ = sess.run([F_optim, F_sum])
         writer.add_summary(summary_str, counter)
 
         # UPDATE DX
         _, summary_str = sess.run([DX_optim, DX_sum],
                                   feed_dict={fake_X_sample: cache_X.fetch(generated_X)})
         writer.add_summary(summary_str, counter)
+
+        #im_summary = sess.run([images_sum])
 
         counter += 1
         print("[%4d] time: %4.4f" % (counter, time.time() - start_time))
@@ -471,7 +492,7 @@ try:
 
         if np.mod(counter, SAVE_STEP) == 0:
             print("Running for '{0:.2}' mins, saving to {1}".format(timer.elapsed() / 60, CHECKPOINT_FILE))
-            saver.save(sess, CHECKPOINT_FILE)
+            saver.save(sess, CHECKPOINT_FILE, global_step=counter)
 
         if np.mod(counter, SAVE_STEP) == 0:
             elapsed_min = timer.elapsed() / 60
@@ -487,7 +508,7 @@ except KeyboardInterrupt:
 except Exception as e:
     coord.request_stop(e)
 finally:
-    save_path = saver.save(sess, CHECKPOINT_FILE)
+    save_path = saver.save(sess, CHECKPOINT_FILE, global_step=counter)
     print("Model saved in file: %s" % CHECKPOINT_FILE)
     # When done, ask the threads to stop.
     coord.request_stop()
