@@ -24,6 +24,7 @@ prepped = subp.add_parser('prepped', aliases=['p'], help='For files already spli
 prepped.add_argument('--files', type=exists, help='Location of training files', required=True)
 prepped.add_argument('-o', '--output-prefix', help='Prefix file/path for output tfrecords files', required=True,
                     dest='output_prefix')
+prepped.add_argument('-n', '--num-test', dest='num_test', type=int, help='Number of examples to include in test sets.', default=-1)
 
 raw = subp.add_parser('raw')
 raw.add_argument('--d1', '--dir1', '--directory1', dest='dir_1', help='Directory containing "Set A" of images.', required=True)
@@ -32,6 +33,7 @@ raw.add_argument('-s', '--split', dest='split_pct', type=int, default=70, help='
 raw.add_argument('--outdir', '--out-dir', dest='out_dir', help='Will split the data and store in "prepped" format into this directory.', required=True)
 raw.add_argument('-o', '--output-prefix', help='Prefix file/path for output tfrecords files', required=True,
                     dest='output_prefix')
+raw.add_argument('-n', '--num-test', dest='num_test', type=int, help='Number of examples to include in test sets.', default=-1)
 
 def reader(path, shuffle=True):
     files = []
@@ -51,7 +53,7 @@ def reader(path, shuffle=True):
 
     return files
 
-def raw_writer(dir_1, dir_2, split, out_dir, output_prefix):
+def raw_writer(dir_1, dir_2, split, out_dir, output_prefix, num_test=-1):
     files_1 = reader(dir_1)
     n_train_1 = int(len(files_1) * float(split) / 100.)
     files_2 = reader(dir_2)
@@ -65,9 +67,9 @@ def raw_writer(dir_1, dir_2, split, out_dir, output_prefix):
         for file in files:
             copyfile(file, os.path.join(cur_dir, os.path.basename(file)))
 
-    prepped_writer(out_dir, output_prefix)
+    prepped_writer(out_dir, output_prefix, num_test=num_test)
 
-def prepped_writer(root_path, output_prefix):
+def prepped_writer(root_path, output_prefix, num_test=-1):
     as_bytes = lambda data: tf.train.Feature(bytes_list=tf.train.BytesList(value=[data]))
     as_example = lambda fn, data: tf.train.Example(features=tf.train.Features(feature={
         'image/file_name': as_bytes(tf.compat.as_bytes(os.path.basename(fn))),
@@ -84,6 +86,10 @@ def prepped_writer(root_path, output_prefix):
 
         record_writer = tf.python_io.TFRecordWriter(outfile)
 
+        if num_test != -1 and sub.startswith('test'):
+            print('Limiting {} to {} files'.format(sub, num_test))
+            files = files[:num_test]
+
         for ix, file in enumerate(files):
             with tf.gfile.FastGFile(file, 'rb') as f:
                 image_data = f.read()
@@ -92,14 +98,14 @@ def prepped_writer(root_path, output_prefix):
             record_writer.write(example.SerializeToString())
 
             if ix % 500 == 0:
-                print('Processed {}/{}.'.format(ix, len(files)))
+                print('{}: Processed {}/{}.'.format(sub, ix, len(files)))
         print('Done.')
         record_writer.close()
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    result = parser.parse_args()
-    if result.command == 'raw':
-        raw_writer(result.dir_1, result.dir_2, result.split_pct, result.out_dir, result.output_prefix)
+    args = parser.parse_args()
+    if args.command == 'raw':
+        raw_writer(args.dir_1, args.dir_2, args.split_pct, args.out_dir, args.output_prefix, args.num_test)
     else:
-        prepped_writer(result.files, result.output_prefix)
+        prepped_writer(args.files, args.output_prefix, args.num_test)
