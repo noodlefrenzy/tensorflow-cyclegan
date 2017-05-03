@@ -387,10 +387,10 @@ DY_loss_fake_sum = tf.summary.scalar("loss/DY_fake", DY_loss_fake)
 DX_loss_real_sum = tf.summary.scalar("loss/DX_real", DX_loss_real)
 DX_loss_fake_sum = tf.summary.scalar("loss/DX_fake", DX_loss_fake)
 
-imgX = tf.summary.image('real_X', tf.transpose(real_X, perm=[0, 2, 3, 1]), max_outputs=3)
-imgG = tf.summary.image('genG', tf.transpose(genG, perm=[0, 2, 3, 1]), max_outputs=3)
-imgY = tf.summary.image('real_Y', tf.transpose(real_Y, perm=[0, 2, 3, 1]), max_outputs=3)
-imgF = tf.summary.image('genF', tf.transpose(genF, perm=[0, 2, 3, 1]), max_outputs=3)
+imgX = tf.summary.image('real_X', real_X, max_outputs=1)
+imgF = tf.summary.image('fake_X', genF, max_outputs=1)
+imgY = tf.summary.image('real_Y', real_Y, max_outputs=1)
+imgG = tf.summary.image('fake_Y', genG, max_outputs=1)
 
 # SETUP OUR TRAINING
 # -------------------------------------------------------
@@ -452,6 +452,7 @@ else:
 coord = tf.train.Coordinator()
 threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
+summary_op = tf.summary.merge_all()
 writer = tf.summary.FileWriter(LOG_DIR, sess.graph)
 
 cache_X = ImageCache(50)
@@ -464,25 +465,9 @@ try:
         # FORWARD PASS
         generated_X, generated_Y = sess.run([genF, genG])
 
-        # UPDATE  G
-        _, summary_str = sess.run([G_optim, G_sum])
+        _, _, _, _, summary_str = sess.run([G_optim, DY_optim, F_optim, DX_optim, summary_op],
+                      feed_dict={fake_Y_sample: cache_Y.fetch(generated_Y), fake_X_sample: cache_X.fetch(generated_X)})
         writer.add_summary(summary_str, counter)
-
-        # UPDATE DY
-        _ = sess.run([DY_optim, DY_sum],
-                      feed_dict={fake_Y_sample: cache_Y.fetch(generated_Y)})
-        writer.add_summary(summary_str, counter)
-
-        # UPDATE F
-        _ = sess.run([F_optim, F_sum])
-        writer.add_summary(summary_str, counter)
-
-        # UPDATE DX
-        _, summary_str = sess.run([DX_optim, DX_sum],
-                                  feed_dict={fake_X_sample: cache_X.fetch(generated_X)})
-        writer.add_summary(summary_str, counter)
-
-        #im_summary = sess.run([images_sum])
 
         counter += 1
         print("[%4d] time: %4.4f" % (counter, time.time() - start_time))
