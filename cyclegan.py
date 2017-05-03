@@ -56,7 +56,8 @@ def parseArguments():
     parser.add_argument('-s', '--sample', '--sample-freq', dest='sample_freq', help='How often to write out sample images', type=int, default=SAMPLE_STEP)
     parser.add_argument('--checkpoint-freq', dest='checkpoint_freq', help='How often to save to the checkpoint file', type=int, default=SAVE_STEP)
     parser.add_argument('--ignore', '--ignore-checkpoint', dest='ignore_checkpoint', help='Ignore existing checkpoint file and start from scratch', action='store_true')
-    parser.add_argument('--norm', help='Specify normalization type', choices=['batch', 'instance', 'none'], default='batch')
+    parser.add_argument('--norm', help='Specify normalization type for non-Residual blocks', choices=['batch', 'instance', 'none'], default='batch')
+    parser.add_argument('--rnorm', help='Specify normalization type for Residual blocks', choices=['batch', 'instance', 'none'], default='instance')
 
     # Parse arguments
     args = parser.parse_args()
@@ -231,7 +232,7 @@ def do_norm(x, norm, name, reuse):
 
 # DEFINE OUR GENERATOR
 # -------------------------------------------------------
-def generator(image, norm='batch', reuse=False, name="generator"):
+def generator(image, norm='batch', rnorm='instance', reuse=False, name="generator"):
     with tf.variable_scope(name):
         # image is 256 x 256 x input_c_dim
         if reuse:
@@ -240,7 +241,7 @@ def generator(image, norm='batch', reuse=False, name="generator"):
             tf.variable_scope(tf.get_variable_scope(), reuse=False)
             assert tf.get_variable_scope().reuse == False
 
-        def residual_block(x, dim, ks=3, s=1, name='res', reuse=reuse):
+        def residual_block(x, dim, ks=3, s=1, norm='instance', name='res', reuse=reuse):
             p = int((ks - 1) / 2)
             y = tf.pad(x, [[0, 0], [p, p], [p, p], [0, 0]], "REFLECT")
             y = conv2d(y, dim, ks, s, padding='VALID', name=name + '_c1', reuse=reuse)
@@ -259,15 +260,15 @@ def generator(image, norm='batch', reuse=False, name="generator"):
         c2 = tf.nn.relu(do_norm(conv2d(c, 64, 3, 2, name='g_e2_c', reuse=reuse), norm, 'g_e2', reuse))
         c3 = tf.nn.relu(do_norm(conv2d(c2, 128, 3, 2, name='g_e3_c', reuse=reuse), norm, 'g_e3', reuse))
         # define G network with 9 resnet blocks
-        r1 = residual_block(c3, 128, name='g_r1', reuse=reuse)
-        r2 = residual_block(r1, 128, name='g_r2', reuse=reuse)
-        r3 = residual_block(r2, 128, name='g_r3', reuse=reuse)
-        r4 = residual_block(r3, 128, name='g_r4', reuse=reuse)
-        r5 = residual_block(r4, 128, name='g_r5', reuse=reuse)
-        r6 = residual_block(r5, 128, name='g_r6', reuse=reuse)
-        r7 = residual_block(r6, 128, name='g_r7', reuse=reuse)
-        r8 = residual_block(r7, 128, name='g_r8', reuse=reuse)
-        r9 = residual_block(r8, 128, name='g_r9', reuse=reuse)
+        r1 = residual_block(c3, 128, norm=rnorm, name='g_r1', reuse=reuse)
+        r2 = residual_block(r1, 128, norm=rnorm, name='g_r2', reuse=reuse)
+        r3 = residual_block(r2, 128, norm=rnorm, name='g_r3', reuse=reuse)
+        r4 = residual_block(r3, 128, norm=rnorm, name='g_r4', reuse=reuse)
+        r5 = residual_block(r4, 128, norm=rnorm, name='g_r5', reuse=reuse)
+        r6 = residual_block(r5, 128, norm=rnorm, name='g_r6', reuse=reuse)
+        r7 = residual_block(r6, 128, norm=rnorm, name='g_r7', reuse=reuse)
+        r8 = residual_block(r7, 128, norm=rnorm, name='g_r8', reuse=reuse)
+        r9 = residual_block(r8, 128, norm=rnorm, name='g_r9', reuse=reuse)
 
         d1 = deconv2d(r9, 64, 3, 2, name='g_d1_dc', reuse=reuse)
         d1 = tf.nn.relu(do_norm(d1, norm, 'g_d1', reuse))
@@ -338,18 +339,18 @@ real_X = Images(args.input_prefix + '_trainA.tfrecords', batch_size=BATCH_SIZE, 
 real_Y = Images(args.input_prefix + '_trainB.tfrecords', batch_size=BATCH_SIZE, name='real_Y').feed()
 
 # genG(X) => Y            - fake_B
-genG = generator(real_X, name="generatorG")
+genG = generator(real_X, norm=args.norm, rnorm=args.rnorm, name="generatorG")
 # genF(Y) => X            - fake_A
-genF = generator(real_Y, name="generatorF")
+genF = generator(real_Y, norm=args.norm, rnorm=args.rnorm, name="generatorF")
 # genF( genG(Y) ) => Y    - fake_A_
-genF_back = generator(genG, name="generatorF", reuse=True)
+genF_back = generator(genG, norm=args.norm, rnorm=args.rnorm, name="generatorF", reuse=True)
 # genF( genG(X)) => X     - fake_B_
-genG_back = generator(genF, name="generatorG", reuse=True)
+genG_back = generator(genF, norm=args.norm, rnorm=args.rnorm, name="generatorG", reuse=True)
 
 # DY_fake is the discriminator for Y that takes in genG(X)
 # DX_fake is the discriminator for X that takes in genF(Y)
-discY_fake = discriminator(genG, reuse=False, name="discY")
-discX_fake = discriminator(genF, reuse=False, name="discX")
+discY_fake = discriminator(genG, norm=args.norm, reuse=False, name="discY")
+discX_fake = discriminator(genF, norm=args.norm, reuse=False, name="discX")
 
 g_loss_G = tf.reduce_mean((discY_fake - tf.ones_like(discY_fake) * np.abs(np.random.normal(1.0,softL_c))) ** 2) \
            + L1_lambda * tf.reduce_mean(tf.abs(real_X - genF_back)) \
@@ -364,10 +365,10 @@ fake_Y_sample = tf.placeholder(tf.float32, [None, 256, 256, 3], name="fake_Y_sam
 
 # DY is the discriminator for Y that takes in Y
 # DX is the discriminator for X that takes in X
-DY = discriminator(real_Y, reuse=True, name="discY")
-DX = discriminator(real_X, reuse=True, name="discX")
-DY_fake_sample = discriminator(fake_Y_sample, reuse=True, name="discY")
-DX_fake_sample = discriminator(fake_X_sample, reuse=True, name="discX")
+DY = discriminator(real_Y, norm=args.norm, reuse=True, name="discY")
+DX = discriminator(real_X, norm=args.norm, reuse=True, name="discX")
+DY_fake_sample = discriminator(fake_Y_sample, norm=args.norm, reuse=True, name="discY")
+DX_fake_sample = discriminator(fake_X_sample, norm=args.norm, reuse=True, name="discX")
 
 DY_loss_real = tf.reduce_mean((DY - tf.ones_like(DY) * np.abs(np.random.normal(1.0,softL_c))) ** 2)
 DY_loss_fake = tf.reduce_mean((DY_fake_sample - tf.zeros_like(DY_fake_sample)) ** 2)
@@ -380,10 +381,10 @@ DX_loss = (DX_loss_real + DX_loss_fake) / 2
 test_X = Images(args.input_prefix + '_testA.tfrecords', shuffle=False, name='test_A').feed()
 test_Y = Images(args.input_prefix + '_testB.tfrecords', shuffle=False, name='test_B').feed()
 
-testG = generator(test_X, name="generatorG", reuse=True)
-testF = generator(test_Y, name="generatorF", reuse=True)
-testF_back = generator(testG, name="generatorF", reuse=True)
-testG_back = generator(testF, name="generatorG", reuse=True)
+testG = generator(test_X, norm=args.norm, rnorm=args.rnorm, name="generatorG", reuse=True)
+testF = generator(test_Y, norm=args.norm, rnorm=args.rnorm, name="generatorF", reuse=True)
+testF_back = generator(testG, norm=args.norm, rnorm=args.rnorm, name="generatorF", reuse=True)
+testG_back = generator(testF, norm=args.norm, rnorm=args.rnorm, name="generatorG", reuse=True)
 
 t_vars = tf.trainable_variables()
 DY_vars = [v for v in t_vars if 'discY' in v.name]
