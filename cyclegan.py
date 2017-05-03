@@ -20,6 +20,7 @@ MAX_TRAIN_TIME_MINS = 600
 
 SAMPLE_STEP = 10
 SAVE_STEP = 500
+LOG_FREQUENCY = 1
 TIME_CHECK_STEP = 100
 
 L1_lambda = 10
@@ -32,7 +33,8 @@ start_time = time.time()
 
 SOFT_LABELS = False
 
-CHECKPOINT_FILE = './checkpoint/cyclegan.ckpt'
+CHECKPOINT_FILE = 'cyclegan.ckpt'
+CHECKPOINT_DIR = './checkpoint/'
 
 # READ INPUT PARAMS
 def parseArguments():
@@ -40,19 +42,20 @@ def parseArguments():
     parser = argparse.ArgumentParser()
 
     # Optional arguments
-    parser.add_argument('--log', '--logdir', dest='logdir', help='Log directory', default=LOG_DIR)
+    parser.add_argument('-log', '--logdir', dest='logdir', help='Log directory', default=LOG_DIR)
     parser.add_argument('-i', '--input', '--input_prefix', dest='input_prefix',
-                        help="Input prefix for tfrecords files.", required=True)
+                                            help="Input prefix for tfrecords files.", required=True)
     parser.add_argument("-t", "--time", help="Max time (mins) to run training", type=int, default=60 * 10)
     parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
+    parser.add_argument("-lf", "--log-freq", dest="log_frequency", help= "How often writer should add summaries", default=LOG_FREQUENCY, type=int)
+    parser.add_argument("-cd", "--check-dir", dest="checkpoint_dir", help="Directory where checkpoint file will be stored", type=str, default=CHECKPOINT_DIR)
+    parser.add_argument("-c", "--check", help="Name of the checkpoint file", type=str, default=CHECKPOINT_FILE)
     parser.add_argument('--end-lr', help='Ending learning rate (for decay)', type=float, default=0.0, dest='end_lr')
     parser.add_argument('--lr-decay-start', help='When (what step) to start decaying LR', type=int, default=100000, dest='lr_decay_start')
-    parser.add_argument("-c", "--check", help="Location of checkpoint  file where model will be stored", type=str,
-                        default=CHECKPOINT_FILE)
     parser.add_argument("-sl", "--softL", help="Set to True for random real labels around 1.0", action='store_true',
-                        default=SOFT_LABELS)
+                                            default=SOFT_LABELS)
     parser.add_argument('-b', '--batch', '--batch-size', help='Batch size', type=int, default=BATCH_SIZE,
-                        dest='batch_size')
+                                            dest='batch_size')
     parser.add_argument('-s', '--sample', '--sample-freq', dest='sample_freq', help='How often to write out sample images', type=int, default=SAMPLE_STEP)
     parser.add_argument('--checkpoint-freq', dest='checkpoint_freq', help='How often to save to the checkpoint file', type=int, default=SAVE_STEP)
     parser.add_argument('--ignore', '--ignore-checkpoint', dest='ignore_checkpoint', help='Ignore existing checkpoint file and start from scratch', action='store_true')
@@ -61,6 +64,13 @@ def parseArguments():
 
     # Parse arguments
     args = parser.parse_args()
+
+    # Raw print arguments
+    print("You are running the script with arguments: ")
+    for a in args.__dict__:
+        print(str(a) + ": " + str(args.__dict__[a]))
+    
+    print("Checkpoints will be saved in {}".format(os.path.join(args.checkpoint_dir, args.check)))
 
     return args
 
@@ -305,20 +315,25 @@ def discriminator(image, norm='batch', reuse=False, name="discriminator"):
         # h4 is (32 x 32 x 1)
         return h4
 
-args = parseArguments()
+def save_model(saver, sess, counter):
+    if not os.path.isdir(CHECKPOINT_DIR):
+        os.makedirs(CHECKPOINT_DIR)
+    path = os.path.join(CHECKPOINT_DIR, CHECKPOINT_FILE)
+    saver.save(sess, path, global_step=counter)
+    return path
 
-# Raw print arguments
-print("You are running the script with arguments: ")
-for a in args.__dict__:
-    print(str(a) + ": " + str(args.__dict__[a]))
+args = parseArguments()
 
 MAX_TRAIN_TIME_MINS = args.time
 LEARNING_RATE = args.lrate
 CHECKPOINT_FILE = args.check
+CHECKPOINT_DIR = args.checkpoint_dir
 BATCH_SIZE = args.batch_size
 SAMPLE_STEP = args.sample_freq
 SAVE_STEP = args.checkpoint_freq
 SOFT_LABELS = args.softL
+LOG_DIR = args.logdir
+LOG_FREQUENCY = args.log_frequency
 
 if SOFT_LABELS:
 	softL_c = 0.05
@@ -481,20 +496,22 @@ try:
 
         # FORWARD PASS
         generated_X, generated_Y = sess.run([genF, genG])
-
         _, _, _, _, summary_str = sess.run([G_optim, DY_optim, F_optim, DX_optim, summary_op],
-                      feed_dict={fake_Y_sample: cache_Y.fetch(generated_Y), fake_X_sample: cache_X.fetch(generated_X)})
-        writer.add_summary(summary_str, counter)
+                feed_dict={fake_Y_sample: cache_Y.fetch(generated_Y), fake_X_sample: cache_X.fetch(generated_X)})
 
         counter += 1
         print("[%4d] time: %4.4f" % (counter, time.time() - start_time))
+
+        if np.mod(counter, LOG_FREQUENCY) == 0:
+            print('writing')
+            writer.add_summary(summary_str, counter)
 
         if np.mod(counter, SAMPLE_STEP) == 0:
             sample_model(sess, counter)
 
         if np.mod(counter, SAVE_STEP) == 0:
-            print("Running for '{0:.2}' mins, saving to {1}".format(timer.elapsed() / 60, CHECKPOINT_FILE))
-            saver.save(sess, CHECKPOINT_FILE, global_step=counter)
+            save_path = save_model(saver, sess, counter)
+            print("Running for '{0:.2}' mins, saving to {1}".format(timer.elapsed() / 60, save_path))
 
         if np.mod(counter, SAVE_STEP) == 0:
             elapsed_min = timer.elapsed() / 60
@@ -510,8 +527,8 @@ except KeyboardInterrupt:
 except Exception as e:
     coord.request_stop(e)
 finally:
-    save_path = saver.save(sess, CHECKPOINT_FILE, global_step=counter)
-    print("Model saved in file: %s" % CHECKPOINT_FILE)
+    save_path = save_model(saver, sess, counter)
+    print("Model saved in file: %s" % save_path)
     # When done, ask the threads to stop.
     coord.request_stop()
     coord.join(threads)
