@@ -70,11 +70,12 @@ def batch_to_image(batch):
 
 
 class Images():
-    def __init__(self, tfrecords_file, image_size=256, batch_size=1, num_threads=2, name=''):
+    def __init__(self, tfrecords_file, image_size=256, batch_size=1, num_threads=2, shuffle=True, name=''):
         self.tfrecords_file = tfrecords_file
         self.image_size = image_size
         self.batch_size = batch_size
         self.num_threads = num_threads
+        self.shuffle = shuffle
         self.name = name
 
     def feed(self):
@@ -93,11 +94,17 @@ class Images():
             image_buffer = features['image/encoded_image']
             image = tf.image.decode_jpeg(image_buffer, channels=3)
             image = self.preprocess(image)
-            images = tf.train.shuffle_batch(
-                [image], batch_size=self.batch_size, num_threads=self.num_threads,
-                capacity=100 + 3 * self.batch_size,
-                min_after_dequeue=100
-            )
+            if self.shuffle:
+                images = tf.train.shuffle_batch(
+                    [image], batch_size=self.batch_size, num_threads=self.num_threads,
+                    capacity=100 + 3 * self.batch_size,
+                    min_after_dequeue=100
+                )
+            else:
+                images = tf.train.batch(
+                    [image], batch_size=self.batch_size, num_threads=self.num_threads,
+                    capacity=100 + 3 * self.batch_size
+                )
 
             tf.summary.image('_input', images)
         return images
@@ -349,8 +356,8 @@ DX_loss_real = tf.reduce_mean((DX - tf.ones_like(DX) * softL_c) ** 2)
 DX_loss_fake = tf.reduce_mean((DX_fake_sample - tf.zeros_like(DX_fake_sample)) ** 2)
 DX_loss = (DX_loss_real + DX_loss_fake) / 2
 
-test_X = Images(args.input_prefix + '_testA.tfrecords', name='test_A').feed()
-test_Y = Images(args.input_prefix + '_testB.tfrecords', name='test_B').feed()
+test_X = Images(args.input_prefix + '_testA.tfrecords', shuffle=False, name='test_A').feed()
+test_Y = Images(args.input_prefix + '_testB.tfrecords', shuffle=False, name='test_B').feed()
 
 testG = generator(test_X, name="generatorG", reuse=True)
 testF = generator(test_Y, name="generatorF", reuse=True)

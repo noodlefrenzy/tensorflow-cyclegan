@@ -226,6 +226,7 @@ A_TEST_DIR = args.testA
 B_TEST_DIR = args.testB
 CHECKPOINT_FILE = args.check
 SAMPLES_DIR = args.samples
+os.makedirs(SAMPLES_DIR, exist_ok=True)
 
 ckpt = tf.train.get_checkpoint_state(CHECKPOINT_FILE)
 
