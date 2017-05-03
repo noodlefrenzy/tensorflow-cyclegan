@@ -1,0 +1,139 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: cyclegan-trainer
+  name: scb-lr0002-b12-sl1
+spec:
+  template:
+    metadata:
+      name: cyclegan-trainer
+    spec:
+      volumes:
+      - name: libraries
+        hostPath:
+          path: /usr/lib/x86_64-linux-gnu
+      - name: azurefile
+        azureFile:
+            secretName: azure-secret
+            shareName: data
+            readOnly: false      
+      containers:
+      - name: cyclegan-trainer
+        command: ["/bin/sh", "-c"]
+        args: ["export LD_LIBRARY_PATH='/usr/lib/x86_64-linux-gnu_custom:$LD_LIBRARY_PATH';  python cyclegan.py --checkpoint-freq 50 -i scb -t 180 -b 12 -sl -lf 5 -cd /data/checkpoints/scb-lr0002-b12-sl1 -log /data/logs/scb-lr0002-b12-sl1"]
+        image: wbuchwalter/cyclegan
+        resources:
+          limits:
+            alpha.kubernetes.io/nvidia-gpu: 1
+        volumeMounts:
+        - mountPath: /usr/lib/x86_64-linux-gnu_custom
+          name: libraries
+        - mountPath: "/data"
+          name: azurefile       
+      restartPolicy: Never
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: cyclegan-trainer
+  name: scb-lr0002-b12-sl0
+spec:
+  template:
+    metadata:
+      name: cyclegan-trainer
+    spec:
+      volumes:
+      - name: libraries
+        hostPath:
+          path: /usr/lib/x86_64-linux-gnu
+      - name: azurefile
+        azureFile:
+            secretName: azure-secret
+            shareName: data
+            readOnly: false      
+      containers:
+      - name: cyclegan-trainer
+        command: ["/bin/sh", "-c"]
+        args: ["export LD_LIBRARY_PATH='/usr/lib/x86_64-linux-gnu_custom:$LD_LIBRARY_PATH';  python cyclegan.py --checkpoint-freq 50 -i scb -t 180 -b 12 -lf 5 -cd /data/checkpoints/scb-lr0002-b12-sl0 -log /data/logs/scb-lr0002-b12-sl0"]
+        image: wbuchwalter/cyclegan
+        resources:
+          limits:
+            alpha.kubernetes.io/nvidia-gpu: 1
+        volumeMounts:
+        - mountPath: /usr/lib/x86_64-linux-gnu_custom
+          name: libraries
+        - mountPath: "/data"
+          name: azurefile       
+      restartPolicy: Never
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: cyclegan-trainer
+  name: rbc-lr0002-b8-sl1
+spec:
+  template:
+    metadata:
+      name: cyclegan-trainer
+    spec:
+      volumes:
+      - name: libraries
+        hostPath:
+          path: /usr/lib/x86_64-linux-gnu
+      - name: azurefile
+        azureFile:
+            secretName: azure-secret
+            shareName: data
+            readOnly: false      
+      containers:
+      - name: cyclegan-trainer
+        command: ["/bin/sh", "-c"]
+        args: ["export LD_LIBRARY_PATH='/usr/lib/x86_64-linux-gnu_custom:$LD_LIBRARY_PATH';  python cyclegan.py --checkpoint-freq 50 -i rbc -t 180 -b 8 -sl -lf 5 -cd /data/checkpoints/rbc-lr0002-b8-sl1 -log /data/logs/rbc-lr0002-b8-sl1"]
+        image: wbuchwalter/cyclegan
+        resources:
+          limits:
+            alpha.kubernetes.io/nvidia-gpu: 1
+        volumeMounts:
+        - mountPath: /usr/lib/x86_64-linux-gnu_custom
+          name: libraries
+        - mountPath: "/data"
+          name: azurefile       
+      restartPolicy: Never
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: cyclegan-trainer
+  name: rbc-lr0002-b8-sl0
+spec:
+  template:
+    metadata:
+      name: cyclegan-trainer
+    spec:
+      volumes:
+      - name: libraries
+        hostPath:
+          path: /usr/lib/x86_64-linux-gnu
+      - name: azurefile
+        azureFile:
+            secretName: azure-secret
+            shareName: data
+            readOnly: false      
+      containers:
+      - name: cyclegan-trainer
+        command: ["/bin/sh", "-c"]
+        args: ["export LD_LIBRARY_PATH='/usr/lib/x86_64-linux-gnu_custom:$LD_LIBRARY_PATH';  python cyclegan.py --checkpoint-freq 50 -i rbc -t 180 -b 8 -lf 5 -cd /data/checkpoints/rbc-lr0002-b8-sl0 -log /data/logs/rbc-lr0002-b8-sl0"]
+        image: wbuchwalter/cyclegan
+        resources:
+          limits:
+            alpha.kubernetes.io/nvidia-gpu: 1
+        volumeMounts:
+        - mountPath: /usr/lib/x86_64-linux-gnu_custom
+          name: libraries
+        - mountPath: "/data"
+          name: azurefile       
+      restartPolicy: Never
