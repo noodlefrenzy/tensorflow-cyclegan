@@ -318,11 +318,12 @@ CHECKPOINT_FILE = args.check
 SOFT_LABELS = args.softL
 
 if SOFT_LABELS:
-	softL_c = np.random.normal(1,0.05)
-	if softL_c > 1.15: softL_c = 1.15
-	if softL_c < 0.85: softL_c = 0.85
+	softL_c = 0.05
+	#softL_c = np.random.normal(1,0.05)
+	#if softL_c > 1.15: softL_c = 1.15
+	#if softL_c < 0.85: softL_c = 0.85
 else:
-	softL_c = 1.0
+	softL_c = 0.0
 print('Soft Labeling: ', softL_c)
 
 # DEFINE OUR MODEL AND LOSS FUNCTIONS
