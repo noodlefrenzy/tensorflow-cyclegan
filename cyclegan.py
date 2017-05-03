@@ -48,7 +48,7 @@ def parseArguments():
     parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
     parser.add_argument("-c", "--check", help="Location of checkpoint  file where model will be stored", type=str,
                         default=CHECKPOINT_FILE)
-    parser.add_argument("-sl", "--softL", help="Set to True for random real labels around 1.0", type=bool,
+    parser.add_argument("-sl", "--softL", help="Set to True for random real labels around 1.0", action='store_true',
                         default=SOFT_LABELS)
     parser.add_argument('-b', '--batch', '--batch-size', help='Batch size', type=int, default=BATCH_SIZE,
                         dest='batch_size')
