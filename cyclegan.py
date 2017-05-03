@@ -303,7 +303,6 @@ SAVE_STEP = args.checkpoint_freq
 SOFT_LABELS = args.softL
 
 if SOFT_LABELS:
-<<<<<<< HEAD
 	softL_c = 0.05
 	#softL_c = np.random.normal(1,0.05)
 	#if softL_c > 1.15: softL_c = 1.15
