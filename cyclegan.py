@@ -25,10 +25,10 @@ TIME_CHECK_STEP = 100
 L1_lambda = 10
 LEARNING_RATE = 0.0002
 MOMENTUM = 0.5
+MAX_STEPS = 100000
 
 counter = 1
 start_time = time.time()
-totalEpochs = 200
 
 SOFT_LABELS = False
 
@@ -52,6 +52,8 @@ def parseArguments():
                         default=SOFT_LABELS)
     parser.add_argument('-b', '--batch', '--batch-size', help='Batch size', type=int, default=BATCH_SIZE,
                         dest='batch_size')
+    parser.add_argument('-s', '--sample', '--sample-freq', dest='sample_freq', help='How often to write out sample images', type=int, default=SAMPLE_STEP)
+    parser.add_argument('--checkpoint-freq', dest='checkpoint_freq', help='How often to save to the checkpoint file', type=int, default=SAVE_STEP)
 
     # Parse arguments
     args = parser.parse_args()
@@ -155,7 +157,7 @@ def merge(images, size):
 
 def sample_model(sess, idx):
     # RUN THEM THROUGH THE MODEL
-    x_val, y_val, y_samp, x_samp, x_cycle_samp, y_cycle_samp = sess.run(
+    x_val, y_val, y_samp, x_samp, y_cycle_samp, x_cycle_samp = sess.run(
         [test_X, test_Y, testG, testF, testG_back, testF_back])
 
     # GRAB THE RETURNED RESULTS AND COLOR CORRECT / MERGE DOWN TO SINGLE IMAGE FILE EACH
@@ -289,6 +291,8 @@ MAX_TRAIN_TIME_MINS = args.time
 LEARNING_RATE = args.lrate
 CHECKPOINT_FILE = args.check
 BATCH_SIZE = args.batch_size
+SAMPLE_STEP = args.sample_freq
+SAVE_STEP = args.checkpoint_freq
 SOFT_LABELS = args.softL
 
 if SOFT_LABELS:
@@ -422,7 +426,7 @@ sess.run(tf.global_variables_initializer())
 coord = tf.train.Coordinator()
 threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
-writer = tf.summary.FileWriter("./log", sess.graph)
+writer = tf.summary.FileWriter(LOG_DIR, sess.graph)
 
 cache_X = ImageCache(50)
 cache_Y = ImageCache(50)
