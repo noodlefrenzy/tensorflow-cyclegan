@@ -303,11 +303,12 @@ SAVE_STEP = args.checkpoint_freq
 SOFT_LABELS = args.softL
 
 if SOFT_LABELS:
-    softL_c = np.random.normal(1, 0.05)
-    if softL_c > 1.15: softL_c = 1.15
-    if softL_c < 0.85: softL_c = 0.85
+	softL_c = 0.05
+	#softL_c = np.random.normal(1,0.05)
+	#if softL_c > 1.15: softL_c = 1.15
+	#if softL_c < 0.85: softL_c = 0.85
 else:
-    softL_c = 1.0
+	softL_c = 0.0
 print('Soft Labeling: ', softL_c)
 
 # DEFINE OUR MODEL AND LOSS FUNCTIONS
@@ -330,11 +331,11 @@ genG_back = generator(genF, name="generatorG", reuse=True)
 discY_fake = discriminator(genG, reuse=False, name="discY")
 discX_fake = discriminator(genF, reuse=False, name="discX")
 
-g_loss_G = tf.reduce_mean((discY_fake - tf.ones_like(discY_fake) * softL_c) ** 2) \
+g_loss_G = tf.reduce_mean((discY_fake - tf.ones_like(discY_fake) * np.abs(np.random.normal(1.0,softL_c))) ** 2) \
            + L1_lambda * tf.reduce_mean(tf.abs(real_X - genF_back)) \
            + L1_lambda * tf.reduce_mean(tf.abs(real_Y - genG_back))
 
-g_loss_F = tf.reduce_mean((discX_fake - tf.ones_like(discX_fake) * softL_c) ** 2) \
+g_loss_F = tf.reduce_mean((discX_fake - tf.ones_like(discX_fake) * np.abs(np.random.normal(1.0,softL_c))) ** 2) \
            + L1_lambda * tf.reduce_mean(tf.abs(real_X - genF_back)) \
            + L1_lambda * tf.reduce_mean(tf.abs(real_Y - genG_back))
 
@@ -348,11 +349,11 @@ DX = discriminator(real_X, reuse=True, name="discX")
 DY_fake_sample = discriminator(fake_Y_sample, reuse=True, name="discY")
 DX_fake_sample = discriminator(fake_X_sample, reuse=True, name="discX")
 
-DY_loss_real = tf.reduce_mean((DY - tf.ones_like(DY) * softL_c) ** 2)
+DY_loss_real = tf.reduce_mean((DY - tf.ones_like(DY) * np.abs(np.random.normal(1.0,softL_c))) ** 2)
 DY_loss_fake = tf.reduce_mean((DY_fake_sample - tf.zeros_like(DY_fake_sample)) ** 2)
 DY_loss = (DY_loss_real + DY_loss_fake) / 2
 
-DX_loss_real = tf.reduce_mean((DX - tf.ones_like(DX) * softL_c) ** 2)
+DX_loss_real = tf.reduce_mean((DX - tf.ones_like(DX) * np.abs(np.random.normal(1.0,softL_c))) ** 2)
 DX_loss_fake = tf.reduce_mean((DX_fake_sample - tf.zeros_like(DX_fake_sample)) ** 2)
 DX_loss = (DX_loss_real + DX_loss_fake) / 2
 
