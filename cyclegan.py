@@ -59,6 +59,8 @@ def parseArguments():
     parser.add_argument('-s', '--sample', '--sample-freq', dest='sample_freq', help='How often to write out sample images', type=int, default=SAMPLE_STEP)
     parser.add_argument('--checkpoint-freq', dest='checkpoint_freq', help='How often to save to the checkpoint file', type=int, default=SAVE_STEP)
     parser.add_argument('--ignore', '--ignore-checkpoint', dest='ignore_checkpoint', help='Ignore existing checkpoint file and start from scratch', action='store_true')
+    parser.add_argument('--norm', help='Specify normalization type for non-Residual blocks', choices=['batch', 'instance', 'none'], default='batch')
+    parser.add_argument('--rnorm', help='Specify normalization type for Residual blocks', choices=['batch', 'instance', 'none'], default='instance')
 
     # Parse arguments
     args = parser.parse_args()
@@ -201,6 +203,15 @@ def batch_norm(x, name="batch_norm", reuse=False):
     return tf.contrib.layers.batch_norm(x, decay=0.9, updates_collections=None, epsilon=1e-5, scale=True, scope=name,
                                         reuse=reuse)
 
+def instance_norm(x, name='instance_norm', reuse=False):
+    with tf.variable_scope(name, reuse=reuse):
+        depth = x.get_shape()[3]
+        scale = tf.get_variable('scale', [depth], initializer=tf.random_normal_initializer(1.0, 0.02))
+        offset = tf.get_variable('offset', [depth], initializer=tf.constant_initializer(0.0))
+        mean, variance = tf.nn.moments(x, axes=[1, 2], keep_dims=True)
+        inv = tf.rsqrt(variance + 1e-5)
+        normalized = (x - mean) * inv
+        return scale * normalized + offset
 
 def conv2d(input_, output_dim, ks=4, s=2, stddev=0.02, padding='SAME', name="conv2d", reuse=False):
     with tf.variable_scope(name):
@@ -222,9 +233,16 @@ def lrelu(x, leak=0.2, name="lrelu"):
     return tf.maximum(x, leak * x)
 
 
+def do_norm(x, norm, name, reuse):
+    if norm == 'batch':
+        x = batch_norm(x, name + '_bn', reuse=reuse)
+    elif norm == 'instance':
+        x = instance_norm(x, name + '_in', reuse=reuse)
+    return x
+
 # DEFINE OUR GENERATOR
 # -------------------------------------------------------
-def generator(image, reuse=False, name="generator"):
+def generator(image, norm='batch', rnorm='instance', reuse=False, name="generator"):
     with tf.variable_scope(name):
         # image is 256 x 256 x input_c_dim
         if reuse:
@@ -233,51 +251,50 @@ def generator(image, reuse=False, name="generator"):
             tf.variable_scope(tf.get_variable_scope(), reuse=False)
             assert tf.get_variable_scope().reuse == False
 
-        def residual_block(x, dim, ks=3, s=1, name='res', reuse=reuse):
+        def residual_block(x, dim, ks=3, s=1, norm='instance', name='res', reuse=reuse):
             p = int((ks - 1) / 2)
             y = tf.pad(x, [[0, 0], [p, p], [p, p], [0, 0]], "REFLECT")
-            y = batch_norm(conv2d(y, dim, ks, s, padding='VALID', name=name + '_c1', reuse=reuse), name + '_bn1',
-                           reuse=reuse)
+            y = conv2d(y, dim, ks, s, padding='VALID', name=name + '_c1', reuse=reuse)
+            y = do_norm(y, norm, name + '_1', reuse)
             y = tf.pad(tf.nn.relu(y), [[0, 0], [p, p], [p, p], [0, 0]], "REFLECT")
-            y = batch_norm(conv2d(y, dim, ks, s, padding='VALID', name=name + '_c2', reuse=reuse), name + '_bn2',
-                           reuse=reuse)
+            y = conv2d(y, dim, ks, s, padding='VALID', name=name + '_c2', reuse=reuse)
+            y = do_norm(y, norm, name + '_2', reuse)
             return y + x
 
         s = 256
         # Justin Johnson's model from https://github.com/jcjohnson/fast-neural-style/
         # The network with 9 blocks consists of: c7s1-32, d64, d128, R128, R128, R128,
         # R128, R128, R128, R128, R128, R128, u64, u32, c7s1-3
-        c0 = tf.pad(image, [[0, 0], [3, 3], [3, 3], [0, 0]], "REFLECT")
-        c1 = tf.nn.relu(
-            batch_norm(conv2d(c0, 32, 7, 1, padding='VALID', name='g_e1_c', reuse=reuse), 'g_e1_bn', reuse=reuse))
-        c2 = tf.nn.relu(batch_norm(conv2d(c1, 64, 3, 2, name='g_e2_c', reuse=reuse), 'g_e2_bn', reuse=reuse))
-        c3 = tf.nn.relu(batch_norm(conv2d(c2, 128, 3, 2, name='g_e3_c', reuse=reuse), 'g_e3_bn', reuse=reuse))
+        c = tf.pad(image, [[0, 0], [3, 3], [3, 3], [0, 0]], "REFLECT")
+        c = tf.nn.relu(do_norm(conv2d(c, 32, 7, 1, padding='VALID', name='g_e1_c', reuse=reuse), norm, name + 'g_e1', reuse))
+        c2 = tf.nn.relu(do_norm(conv2d(c, 64, 3, 2, name='g_e2_c', reuse=reuse), norm, 'g_e2', reuse))
+        c3 = tf.nn.relu(do_norm(conv2d(c2, 128, 3, 2, name='g_e3_c', reuse=reuse), norm, 'g_e3', reuse))
         # define G network with 9 resnet blocks
-        r1 = residual_block(c3, 128, name='g_r1', reuse=reuse)
-        r2 = residual_block(r1, 128, name='g_r2', reuse=reuse)
-        r3 = residual_block(r2, 128, name='g_r3', reuse=reuse)
-        r4 = residual_block(r3, 128, name='g_r4', reuse=reuse)
-        r5 = residual_block(r4, 128, name='g_r5', reuse=reuse)
-        r6 = residual_block(r5, 128, name='g_r6', reuse=reuse)
-        r7 = residual_block(r6, 128, name='g_r7', reuse=reuse)
-        r8 = residual_block(r7, 128, name='g_r8', reuse=reuse)
-        r9 = residual_block(r8, 128, name='g_r9', reuse=reuse)
+        r1 = residual_block(c3, 128, norm=rnorm, name='g_r1', reuse=reuse)
+        r2 = residual_block(r1, 128, norm=rnorm, name='g_r2', reuse=reuse)
+        r3 = residual_block(r2, 128, norm=rnorm, name='g_r3', reuse=reuse)
+        r4 = residual_block(r3, 128, norm=rnorm, name='g_r4', reuse=reuse)
+        r5 = residual_block(r4, 128, norm=rnorm, name='g_r5', reuse=reuse)
+        r6 = residual_block(r5, 128, norm=rnorm, name='g_r6', reuse=reuse)
+        r7 = residual_block(r6, 128, norm=rnorm, name='g_r7', reuse=reuse)
+        r8 = residual_block(r7, 128, norm=rnorm, name='g_r8', reuse=reuse)
+        r9 = residual_block(r8, 128, norm=rnorm, name='g_r9', reuse=reuse)
 
         d1 = deconv2d(r9, 64, 3, 2, name='g_d1_dc', reuse=reuse)
-        d1 = tf.nn.relu(batch_norm(d1, 'g_d1_bn', reuse=reuse))
+        d1 = tf.nn.relu(do_norm(d1, norm, 'g_d1', reuse))
 
         d2 = deconv2d(d1, 32, 3, 2, name='g_d2_dc', reuse=reuse)
-        d2 = tf.nn.relu(batch_norm(d2, 'g_d2_bn', reuse=reuse))
+        d2 = tf.nn.relu(do_norm(d2, norm, 'g_d2', reuse))
         d2 = tf.pad(d2, [[0, 0], [3, 3], [3, 3], [0, 0]], "REFLECT")
         pred = conv2d(d2, 3, 7, 1, padding='VALID', name='g_pred_c', reuse=reuse)
-        pred = tf.nn.tanh(batch_norm(pred, 'g_pred_bn', reuse=reuse))
+        pred = tf.nn.tanh(do_norm(pred, norm, 'g_pred', reuse))
 
         return pred
 
 
 # DEFINE OUR DISCRIMINATOR
 # -------------------------------------------------------
-def discriminator(image, reuse=False, name="discriminator"):
+def discriminator(image, norm='batch', reuse=False, name="discriminator"):
     with tf.variable_scope(name):
         # image is 256 x 256 x input_c_dim
         if reuse:
@@ -288,11 +305,11 @@ def discriminator(image, reuse=False, name="discriminator"):
 
         h0 = lrelu(conv2d(image, 64, reuse=reuse, name='d_h0_conv'))
         # h0 is (128 x 128 x self.df_dim)
-        h1 = lrelu(batch_norm(conv2d(h0, 128, name='d_h1_conv', reuse=reuse), 'd_bn1', reuse=reuse))
+        h1 = lrelu(do_norm(conv2d(h0, 128, name='d_h1_conv', reuse=reuse), norm, 'd_1', reuse))
         # h1 is (64 x 64 x self.df_dim*2)
-        h2 = lrelu(batch_norm(conv2d(h1, 256, name='d_h2_conv', reuse=reuse), 'd_bn2', reuse=reuse))
+        h2 = lrelu(do_norm(conv2d(h1, 256, name='d_h2_conv', reuse=reuse), norm, 'd_2', reuse))
         # h2 is (32x 32 x self.df_dim*4)
-        h3 = lrelu(batch_norm(conv2d(h2, 512, s=1, name='d_h3_conv', reuse=reuse), 'd_bn3', reuse=reuse))
+        h3 = lrelu(do_norm(conv2d(h2, 512, s=1, name='d_h3_conv', reuse=reuse), norm, 'd_3', reuse))
         # h3 is (32 x 32 x self.df_dim*8)
         h4 = conv2d(h3, 1, s=1, name='d_h3_pred', reuse=reuse)
         # h4 is (32 x 32 x 1)
@@ -337,18 +354,18 @@ real_X = Images(args.input_prefix + '_trainA.tfrecords', batch_size=BATCH_SIZE, 
 real_Y = Images(args.input_prefix + '_trainB.tfrecords', batch_size=BATCH_SIZE, name='real_Y').feed()
 
 # genG(X) => Y            - fake_B
-genG = generator(real_X, name="generatorG")
+genG = generator(real_X, norm=args.norm, rnorm=args.rnorm, name="generatorG")
 # genF(Y) => X            - fake_A
-genF = generator(real_Y, name="generatorF")
+genF = generator(real_Y, norm=args.norm, rnorm=args.rnorm, name="generatorF")
 # genF( genG(Y) ) => Y    - fake_A_
-genF_back = generator(genG, name="generatorF", reuse=True)
+genF_back = generator(genG, norm=args.norm, rnorm=args.rnorm, name="generatorF", reuse=True)
 # genF( genG(X)) => X     - fake_B_
-genG_back = generator(genF, name="generatorG", reuse=True)
+genG_back = generator(genF, norm=args.norm, rnorm=args.rnorm, name="generatorG", reuse=True)
 
 # DY_fake is the discriminator for Y that takes in genG(X)
 # DX_fake is the discriminator for X that takes in genF(Y)
-discY_fake = discriminator(genG, reuse=False, name="discY")
-discX_fake = discriminator(genF, reuse=False, name="discX")
+discY_fake = discriminator(genG, norm=args.norm, reuse=False, name="discY")
+discX_fake = discriminator(genF, norm=args.norm, reuse=False, name="discX")
 
 g_loss_G = tf.reduce_mean((discY_fake - tf.ones_like(discY_fake) * np.abs(np.random.normal(1.0,softL_c))) ** 2) \
            + L1_lambda * tf.reduce_mean(tf.abs(real_X - genF_back)) \
@@ -363,10 +380,10 @@ fake_Y_sample = tf.placeholder(tf.float32, [None, 256, 256, 3], name="fake_Y_sam
 
 # DY is the discriminator for Y that takes in Y
 # DX is the discriminator for X that takes in X
-DY = discriminator(real_Y, reuse=True, name="discY")
-DX = discriminator(real_X, reuse=True, name="discX")
-DY_fake_sample = discriminator(fake_Y_sample, reuse=True, name="discY")
-DX_fake_sample = discriminator(fake_X_sample, reuse=True, name="discX")
+DY = discriminator(real_Y, norm=args.norm, reuse=True, name="discY")
+DX = discriminator(real_X, norm=args.norm, reuse=True, name="discX")
+DY_fake_sample = discriminator(fake_Y_sample, norm=args.norm, reuse=True, name="discY")
+DX_fake_sample = discriminator(fake_X_sample, norm=args.norm, reuse=True, name="discX")
 
 DY_loss_real = tf.reduce_mean((DY - tf.ones_like(DY) * np.abs(np.random.normal(1.0,softL_c))) ** 2)
 DY_loss_fake = tf.reduce_mean((DY_fake_sample - tf.zeros_like(DY_fake_sample)) ** 2)
@@ -379,10 +396,10 @@ DX_loss = (DX_loss_real + DX_loss_fake) / 2
 test_X = Images(args.input_prefix + '_testA.tfrecords', shuffle=False, name='test_A').feed()
 test_Y = Images(args.input_prefix + '_testB.tfrecords', shuffle=False, name='test_B').feed()
 
-testG = generator(test_X, name="generatorG", reuse=True)
-testF = generator(test_Y, name="generatorF", reuse=True)
-testF_back = generator(testG, name="generatorF", reuse=True)
-testG_back = generator(testF, name="generatorG", reuse=True)
+testG = generator(test_X, norm=args.norm, rnorm=args.rnorm, name="generatorG", reuse=True)
+testF = generator(test_Y, norm=args.norm, rnorm=args.rnorm, name="generatorF", reuse=True)
+testF_back = generator(testG, norm=args.norm, rnorm=args.rnorm, name="generatorF", reuse=True)
+testG_back = generator(testF, norm=args.norm, rnorm=args.rnorm, name="generatorG", reuse=True)
 
 t_vars = tf.trainable_variables()
 DY_vars = [v for v in t_vars if 'discY' in v.name]
