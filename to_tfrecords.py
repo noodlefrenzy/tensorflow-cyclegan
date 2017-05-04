@@ -106,6 +106,10 @@ def prepped_writer(root_path, min_size, scale_size, crop_size, output_prefix, nu
             image_buf = io.BytesIO()
             as_img = scipy.misc.toimage(im)
             if crop_size > 0:
+                if crop_size > as_img.height or crop_size > as_img.width:
+                    logging.warning('Skipping image {} - ({}, {}) smaller than crop size {}'.format(file, as_img.width, as_img.height, crop_size))
+                    continue
+
                 max_bot = as_img.height - crop_size
                 max_left = as_img.width - crop_size
                 bot = random.randint(0, max_bot)
