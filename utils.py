@@ -95,3 +95,31 @@ def create_traintest(inputdir,outputdir='./data',AB='A',train_frac = 0.75, shuff
         copyfile(os.path.join(inputdir,file),os.path.join(outputdir,'test'+AB,file))
 
 
+def to_image(data):
+    return tf.image.convert_image_dtype((data + 1.) / 2., tf.uint8)
+
+def batch_to_image(batch):
+    return tf.map_fn(to_image, batch, dtype=tf.uint8)
+
+def inverse_transform(images):
+    return (images + 1.) / 2.
+
+def merge(images, size):
+    h, w = images.shape[1], images.shape[2]
+    img = np.zeros((h * size[0], w * size[1], 3))
+    for idx, image in enumerate(images):
+        i = idx % size[1]
+        j = idx // size[1]
+        img[j * h:j * h + h, i * w:i * w + w, :] = image
+
+    return img
+
+def save_model(saver, sess, counter):
+    if not os.path.isdir(CHECKPOINT_DIR):
+        os.makedirs(CHECKPOINT_DIR)
+    path = os.path.join(CHECKPOINT_DIR, CHECKPOINT_FILE)
+    saver.save(sess, path, global_step=counter)
+    return path
+
+def inverse_transform(images):
+    return (images + 1.) / 2.
