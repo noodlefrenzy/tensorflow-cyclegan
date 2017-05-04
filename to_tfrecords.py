@@ -20,13 +20,13 @@ def exists(x):
 parser = argparse.ArgumentParser(description='Convert training and testing images to tfrecords files.')
 subp = parser.add_subparsers(title='subcommands', description='valid subcommands', dest='command')
 
-prepped = subp.add_parser('prepped', aliases=['p'], help='For files already split into trainA/trainB/testA/testB')
+prepped = subp.add_parser('prepped', aliases=['p'], help='For files already split into trainA/trainB/testA/testB.')
 prepped.add_argument('--files', type=exists, help='Location of training files', required=True)
 prepped.add_argument('-o', '--output-prefix', help='Prefix file/path for output tfrecords files', required=True,
                     dest='output_prefix')
 prepped.add_argument('-n', '--num-test', dest='num_test', type=int, help='Number of examples to include in test sets.', default=-1)
 
-raw = subp.add_parser('raw')
+raw = subp.add_parser('raw', help='Turns two directories of images into the trainA/trainB/testA/testB directories, as well as the tfrecords files.')
 raw.add_argument('--d1', '--dir1', '--directory1', dest='dir_1', help='Directory containing "Set A" of images.', required=True)
 raw.add_argument('--d2', '--dir2', '--directory2', dest='dir_2', help='Directory containing "Set B" of images.', required=True)
 raw.add_argument('-s', '--split', dest='split_pct', type=int, default=70, help='Split percent for training set.')
@@ -107,5 +107,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.command == 'raw':
         raw_writer(args.dir_1, args.dir_2, args.split_pct, args.out_dir, args.output_prefix, args.num_test)
-    else:
+    elif args.command == 'prepped':
         prepped_writer(args.files, args.output_prefix, args.num_test)
+    else:
+        parser.print_help()
