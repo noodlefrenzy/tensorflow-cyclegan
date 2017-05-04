@@ -44,7 +44,7 @@ def parseArguments():
     # Optional arguments
     parser.add_argument('-log', '--logdir', dest='logdir', help='Log directory', default=LOG_DIR)
     parser.add_argument('-i', '--input', '--input_prefix', dest='input_prefix',
-                                            help="Input prefix for tfrecords files.", required=True)
+                                            help="Input prefix for tfrecords files (use to_tfrecords.py to generate).", required=True)
     parser.add_argument("-t", "--time", help="Max time (mins) to run training", type=int, default=60 * 10)
     parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
     parser.add_argument("-lf", "--log-freq", dest="log_frequency", help= "How often writer should add summaries", default=LOG_FREQUENCY, type=int)
@@ -251,6 +251,9 @@ def generator(image, norm='batch', rnorm='instance', reuse=False, name="generato
             tf.variable_scope(tf.get_variable_scope(), reuse=False)
             assert tf.get_variable_scope().reuse == False
 
+        # CycleGAN code has two differences from typical Residual blocks
+        # 1) They use instance normalization instead of batch normalization
+        # 2) They are missing the final ReLU nonlinearity after joining with pass-through
         def residual_block(x, dim, ks=3, s=1, norm='instance', name='res', reuse=reuse):
             p = int((ks - 1) / 2)
             y = tf.pad(x, [[0, 0], [p, p], [p, p], [0, 0]], "REFLECT")
