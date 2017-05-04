@@ -8,6 +8,8 @@ import scipy.misc
 import argparse
 import tensorflow as tf
 import utils
+from image import Images
+from imagecache import ImageCache
 
 # ensure reproducability
 random_seed = 1234
@@ -33,6 +35,14 @@ counter = 1
 start_time = time.time()
 
 SOFT_LABELS = False
+
+PIPELINE_TWEAKS = {
+    'random_flip': False,
+    'random_contrast': False,
+    'random_brightness': False,
+    'random_saturation': False,
+    'crop_size': 0
+}
 
 CHECKPOINT_FILE = 'cyclegan.ckpt'
 CHECKPOINT_DIR = './checkpoint/'
@@ -63,6 +73,9 @@ def parseArguments():
     parser.add_argument('--ignore', '--ignore-checkpoint', dest='ignore_checkpoint', help='Ignore existing checkpoint file and start from scratch', action='store_true')
     parser.add_argument('--norm', help='Specify normalization type for non-Residual blocks', choices=['batch', 'instance', 'none'], default='batch')
     parser.add_argument('--rnorm', help='Specify normalization type for Residual blocks', choices=['batch', 'instance', 'none'], default='instance')
+    parser.add_argument('--crop', help='Crop to (crop, crop) and then rescale images as they go into the pipeline', type=int, default=0)
+    parser.add_argument('--random-flip', dest='random_flip', help='Whether to randomly flip images in the pipeline', action='store_true')
+    parser.add_argument('--random-q', dest='random_q', help='Randomly mutate image qualitatively (saturation, contrast, brightness)', action='store_true')
 
     # Parse arguments
     args = parser.parse_args()
@@ -83,81 +96,6 @@ def batch_to_image(batch):
     return tf.map_fn(to_image, batch, dtype=tf.uint8)
 
 
-class Images():
-    def __init__(self, tfrecords_file, image_size=256, batch_size=1, num_threads=2, shuffle=True, name=''):
-        self.tfrecords_file = tfrecords_file
-        self.image_size = image_size
-        self.batch_size = batch_size
-        self.num_threads = num_threads
-        self.shuffle = shuffle
-        self.name = name
-
-    def feed(self):
-        with tf.name_scope(self.name):
-            filename_queue = tf.train.string_input_producer([self.tfrecords_file])
-            reader = tf.TFRecordReader()
-
-            _, serialized_example = reader.read(filename_queue)
-            features = tf.parse_single_example(
-                serialized_example,
-                features={
-                    'image/file_name': tf.FixedLenFeature([], tf.string),
-                    'image/encoded_image': tf.FixedLenFeature([], tf.string),
-                })
-
-            image_buffer = features['image/encoded_image']
-            image = tf.image.decode_jpeg(image_buffer, channels=3)
-            image = self.preprocess(image)
-            if self.shuffle:
-                images = tf.train.shuffle_batch(
-                    [image], batch_size=self.batch_size, num_threads=self.num_threads,
-                    capacity=100 + 3 * self.batch_size,
-                    min_after_dequeue=100
-                )
-            else:
-                images = tf.train.batch(
-                    [image], batch_size=self.batch_size, num_threads=self.num_threads,
-                    capacity=100 + 3 * self.batch_size
-                )
-
-            tf.summary.image('_input', images)
-        return images
-
-    def preprocess(self, image):
-        image = tf.image.resize_images(image, size=(self.image_size, self.image_size))
-        image = tf.image.convert_image_dtype(image, dtype=tf.float32)
-        image = (image / 127.5) - 1.
-        image.set_shape([self.image_size, self.image_size, 3])
-        return image
-
-
-class ImageCache:
-    def __init__(self, cache_size=30):
-        self.cache_size = cache_size
-        self.images = []
-
-    def fetch(self, image):
-        if self.cache_size == 0:
-            return image
-
-        p = random.random()
-        if p > 0.5 and len(self.images) > 0:
-            # use and replace old image.
-            random_id = random.randrange(len(self.images))
-            retval = self.images[random_id].copy()
-            if len(self.images) < self.cache_size:
-                self.images.append(image.copy())
-            else:
-                self.images[random_id] = image.copy()
-            return retval
-        else:
-            if len(self.images) < self.cache_size:
-                self.images.append(image.copy())
-            return image
-
-
-# DEFINE OUR LOAD DATA OPERATIONS
-# -------------------------------------------------------
 # DEFINE OUR SAMPLING FUNCTIONS
 # -------------------------------------------------------
 
@@ -172,7 +110,7 @@ def merge(images, size):
     return img
 
 
-def sample_model(sess, idx):
+def sample_model(sess, idx, test_X, test_Y, testG, testF, testG_back, testF_back):
     # RUN THEM THROUGH THE MODEL
     x_val, y_val, y_samp, x_samp, y_cycle_samp, x_cycle_samp = sess.run(
         [test_X, test_Y, testG, testF, testG_back, testF_back])
@@ -337,6 +275,10 @@ def main():
     SOFT_LABELS = args.softL
     LOG_DIR = args.logdir
     LOG_FREQUENCY = args.log_frequency
+    PIPELINE_TWEAKS['random_flip'] = args.random_flip
+    PIPELINE_TWEAKS['random_brightness'] = PIPELINE_TWEAKS['random_saturation'] = PIPELINE_TWEAKS[
+        'random_contrast'] = args.random_q
+    PIPELINE_TWEAKS['crop_size'] = args.crop
 
     if SOFT_LABELS:
         softL_c = 0.05
@@ -510,7 +452,7 @@ def main():
                 writer.add_summary(summary_str, counter)
 
             if np.mod(counter, SAMPLE_STEP) == 0:
-                sample_model(sess, counter)
+                sample_model(sess, counter, test_X, test_Y, testG, testF, testG_back, testF_back)
 
             if np.mod(counter, SAVE_STEP) == 0:
                 save_path = save_model(saver, sess, counter)
