@@ -20,8 +20,14 @@ def exists(x):
 parser = argparse.ArgumentParser(description='Convert training and testing images to tfrecords files.')
 subp = parser.add_subparsers(title='subcommands', description='valid subcommands', dest='command')
 
+<<<<<<< HEAD
 common = argparse.ArgumentParser(add_help=False)
 common.add_argument('-o', '--output-prefix', help='Prefix file/path for output tfrecords files', required=True,
+=======
+prepped = subp.add_parser('prepped', aliases=['p'], help='For files already split into trainA/trainB/testA/testB.')
+prepped.add_argument('--files', type=exists, help='Location of training files', required=True)
+prepped.add_argument('-o', '--output-prefix', help='Prefix file/path for output tfrecords files', required=True,
+>>>>>>> upstream/master
                     dest='output_prefix')
 common.add_argument('-n', '--num-test', dest='num_test', type=int, help='Number of examples to include in test sets.', default=-1)
 common.add_argument('--min', '--min-size', dest='min_size', type=int, help='Minimum image size (smaller images on either dimension will be filtered', default=0)
@@ -33,7 +39,11 @@ common.add_argument('--verbose', dest='verbose', action='store_true', help='Prin
 prepped = subp.add_parser('prepped', aliases=['p'], help='For files already split into trainA/trainB/testA/testB.', parents=[common])
 prepped.add_argument('--files', type=exists, help='Location of training files', required=True)
 
+<<<<<<< HEAD
 raw = subp.add_parser('raw', help='Turns two directories of images into the trainA/trainB/testA/testB directories, as well as the tfrecords files.', parents=[common])
+=======
+raw = subp.add_parser('raw', help='Turns two directories of images into the trainA/trainB/testA/testB directories, as well as the tfrecords files.')
+>>>>>>> upstream/master
 raw.add_argument('--d1', '--dir1', '--directory1', dest='dir_1', help='Directory containing "Set A" of images.', required=True)
 raw.add_argument('--d2', '--dir2', '--directory2', dest='dir_2', help='Directory containing "Set B" of images.', required=True)
 raw.add_argument('-s', '--split', dest='split_pct', type=int, default=70, help='Split percent for training set.')
@@ -43,7 +53,7 @@ def reader(path, shuffle=True):
     files = []
 
     for img_file in os.scandir(path):
-        if img_file.name.endswith('.jpg') and img_file.is_file():
+        if img_file.name.lower().endswith('.jpg', ) and img_file.is_file():
             files.append(img_file.path)
 
     if shuffle:
@@ -130,8 +140,14 @@ if __name__ == "__main__":
     random.seed(args.seed)  # Set seed for repeatable shuffling.
 
     if args.command == 'raw':
+<<<<<<< HEAD
         raw_writer(args.dir_1, args.dir_2, args.min_size, args.scale, args.crop, args.split_pct, args.out_dir, args.output_prefix, args.num_test, args.verbose)
     elif args.command == 'prepped':
         prepped_writer(args.files, args.min_size, args.scale, args.crop, args.output_prefix, args.num_test, args.verbose)
+=======
+        raw_writer(args.dir_1, args.dir_2, args.split_pct, args.out_dir, args.output_prefix, args.num_test)
+    elif args.command == 'prepped':
+        prepped_writer(args.files, args.output_prefix, args.num_test)
+>>>>>>> upstream/master
     else:
         parser.print_help()
