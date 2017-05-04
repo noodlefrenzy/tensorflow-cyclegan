@@ -33,6 +33,14 @@ start_time = time.time()
 
 SOFT_LABELS = False
 
+PIPELINE_TWEAKS = {
+    'random_flip': False,
+    'random_contrast': False,
+    'random_brightness': False,
+    'random_saturation': False,
+    'crop_size': 0
+}
+
 CHECKPOINT_FILE = 'cyclegan.ckpt'
 CHECKPOINT_DIR = './checkpoint/'
 
@@ -61,6 +69,9 @@ def parseArguments():
     parser.add_argument('--ignore', '--ignore-checkpoint', dest='ignore_checkpoint', help='Ignore existing checkpoint file and start from scratch', action='store_true')
     parser.add_argument('--norm', help='Specify normalization type for non-Residual blocks', choices=['batch', 'instance', 'none'], default='batch')
     parser.add_argument('--rnorm', help='Specify normalization type for Residual blocks', choices=['batch', 'instance', 'none'], default='instance')
+    parser.add_argument('--crop', help='Crop to (crop, crop) and then rescale images as they go into the pipeline', type=int, default=0)
+    parser.add_argument('--random-flip', dest='random_flip', help='Whether to randomly flip images in the pipeline', action='store_true')
+    parser.add_argument('--random-q', dest='random_q', help='Randomly mutate image qualitatively (saturation, contrast, brightness)', action='store_true')
 
     # Parse arguments
     args = parser.parse_args()
@@ -84,12 +95,13 @@ def batch_to_image(batch):
 
 
 class Images():
-    def __init__(self, tfrecords_file, image_size=256, batch_size=1, num_threads=2, shuffle=True, name=''):
+    def __init__(self, tfrecords_file, image_size=256, batch_size=1, num_threads=2, shuffle=True, pipeline_tweaks=None, name=''):
         self.tfrecords_file = tfrecords_file
         self.image_size = image_size
         self.batch_size = batch_size
         self.num_threads = num_threads
         self.shuffle = shuffle
+        self.mods = pipeline_tweaks
         self.name = name
 
     def feed(self):
@@ -124,6 +136,23 @@ class Images():
         return images
 
     def preprocess(self, image):
+        if self.mods and self.mods['random_flip']:
+            image = tf.image.random_flip_left_right(image)
+        if self.mods and self.mods['random_saturation']:
+            image = tf.image.random_saturation(image, .95, 1.05)
+        if self.mods and self.mods['random_brightness']:
+            image = tf.image.random_brightness(image, .05)
+        if self.mods and self.mods['random_contrast']:
+            image = tf.image.random_contrast(image, .95, 1.05)
+
+        if self.mods and self.mods['crop_size'] > 0:
+            wiggle = 8
+            off_x, off_y = 25 - wiggle, 60 - wiggle
+            crop_size = self.mods['crop_size']
+            crop_size_plus = crop_size + 2 * wiggle
+            image = tf.image.crop_to_bounding_box(image, off_y, off_x, crop_size_plus, crop_size_plus)
+            image = tf.random_crop(image, [crop_size, crop_size, 3])
+
         image = tf.image.resize_images(image, size=(self.image_size, self.image_size))
         image = tf.image.convert_image_dtype(image, dtype=tf.float32)
         image = (image / 127.5) - 1.
@@ -337,6 +366,9 @@ SAVE_STEP = args.checkpoint_freq
 SOFT_LABELS = args.softL
 LOG_DIR = args.logdir
 LOG_FREQUENCY = args.log_frequency
+PIPELINE_TWEAKS['random_flip'] = args.random_flip
+PIPELINE_TWEAKS['random_brightness'] = PIPELINE_TWEAKS['random_saturation'] = PIPELINE_TWEAKS['random_contrast'] = args.random_q
+PIPELINE_TWEAKS['crop_size'] = args.crop
 
 if SOFT_LABELS:
 	softL_c = 0.05
@@ -353,8 +385,8 @@ sess = tf.Session()
 # DEFINE OUR MODEL AND LOSS FUNCTIONS
 # -------------------------------------------------------
 
-real_X = Images(args.input_prefix + '_trainA.tfrecords', batch_size=BATCH_SIZE, name='real_X').feed()
-real_Y = Images(args.input_prefix + '_trainB.tfrecords', batch_size=BATCH_SIZE, name='real_Y').feed()
+real_X = Images(args.input_prefix + '_trainA.tfrecords', batch_size=BATCH_SIZE, pipeline_tweaks=PIPELINE_TWEAKS, name='real_X').feed()
+real_Y = Images(args.input_prefix + '_trainB.tfrecords', batch_size=BATCH_SIZE, pipeline_tweaks=PIPELINE_TWEAKS, name='real_Y').feed()
 
 # genG(X) => Y            - fake_B
 genG = generator(real_X, norm=args.norm, rnorm=args.rnorm, name="generatorG")
