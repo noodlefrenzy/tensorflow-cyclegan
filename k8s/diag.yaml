@@ -3,7 +3,7 @@ kind: Job
 metadata:
   labels:
     app: cyclegan-trainer
-  name: scb-b12-sl1-40h
+  name: diag
 spec:
   template:
     metadata:
@@ -21,7 +21,7 @@ spec:
       containers:
       - name: cyclegan-trainer
         command: ["/bin/sh", "-c"]
-        args: ["export LD_LIBRARY_PATH='/usr/lib/x86_64-linux-gnu_custom:$LD_LIBRARY_PATH';  python cyclegan.py --checkpoint-freq 50 -s 50 -sd /data/samples/scb-b12-sl1-40h -i scb -t 1800 -b 12 -sl -lf 5 -cd /data/checkpoints/scb-b12-sl1-40h -log /data/logs/scb-b12-sl1-40h"]
+        args: ["sleep 100h"]
         image: wbuchwalter/cyclegan
         resources:
           limits:
