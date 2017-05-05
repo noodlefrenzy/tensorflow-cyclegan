@@ -27,8 +27,6 @@ LOG_FREQUENCY = 1
 TIME_CHECK_STEP = 100
 
 L1_lambda = 10
-LEARNING_RATE = 0.0002
-MOMENTUM = 0.5
 MAX_STEPS = 100000
 
 counter = 1
@@ -44,25 +42,40 @@ PIPELINE_TWEAKS = {
     'crop_size': 0
 }
 
+OPTIM_PARAMS = {
+    'start_lr': [0.0002, 0.0002, 0.0002, 0.0002],
+    'end_lr': [0., 0., 0., 0.],
+    'lr_decay_start': [100000, 100000, 100000, 100000],
+    'momentum': [0.5, 0.5, 0.5, 0.5]
+}
+
 CHECKPOINT_FILE = 'cyclegan.ckpt'
 CHECKPOINT_DIR = './checkpoint/'
 
 # READ INPUT PARAMS
 def parseArguments():
     # Create argument parser
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='Trains a CycleGAN using the given input sets and parameters.',
+                                     epilog='''
+                                     Arguments like "lrate" allow multiple values: 
+                                     1 means "use the same for F/G/DX/DY",
+                                     2 means "use the first for F/G and the second for DX/DY",
+                                     3 means "use the first for F, the second for G, and the third for DX/DY",
+                                     4 gives a distinct value to each (any higher than 4 are ignored)
+                                     ''')
 
     # Optional arguments
     parser.add_argument('-log', '--logdir', dest='logdir', help='Log directory', default=LOG_DIR)
     parser.add_argument('-i', '--input', '--input_prefix', dest='input_prefix',
                                             help="Input prefix for tfrecords files (use to_tfrecords.py to generate).", required=True)
     parser.add_argument("-t", "--time", help="Max time (mins) to run training", type=int, default=60 * 10)
-    parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
+    parser.add_argument("-l", "--lrate", help="Starting learning rate (F, G, D_X, D_Y)", type=float, nargs="*", default=OPTIM_PARAMS['start_lr'], dest='start_lr')
+    parser.add_argument("-m", "--momentum", help="Adam Momentum (F, G, D_X, D_Y)", type=float, nargs="*", default=OPTIM_PARAMS['momentum'])
     parser.add_argument("-lf", "--log-freq", dest="log_frequency", help= "How often writer should add summaries", default=LOG_FREQUENCY, type=int)
     parser.add_argument("-cd", "--check-dir", dest="checkpoint_dir", help="Directory where checkpoint file will be stored", type=str, default=CHECKPOINT_DIR)
     parser.add_argument("-c", "--check", help="Name of the checkpoint file", type=str, default=CHECKPOINT_FILE)
-    parser.add_argument('--end-lr', help='Ending learning rate (for decay)', type=float, default=0.0, dest='end_lr')
-    parser.add_argument('--lr-decay-start', help='When (what step) to start decaying LR', type=int, default=100000, dest='lr_decay_start')
+    parser.add_argument('--end-lr', help='Ending learning rate (for decay) (F, G, D_X, D_Y)', type=float, nargs="*", default=OPTIM_PARAMS['end_lr'], dest='end_lr')
+    parser.add_argument('--lr-decay-start', help='When (what step) to start decaying LR (F, G, D_X, D_Y)', type=int, nargs="*", default=OPTIM_PARAMS['lr_decay_start'], dest='lr_decay_start')
     parser.add_argument("-sl", "--softL", help="Set to True for random real labels around 1.0", action='store_true',
                                             default=SOFT_LABELS)
     parser.add_argument('-b', '--batch', '--batch-size', help='Batch size', type=int, default=BATCH_SIZE,
@@ -266,7 +279,6 @@ def main():
     args = parseArguments()
 
     MAX_TRAIN_TIME_MINS = args.time
-    LEARNING_RATE = args.lrate
     CHECKPOINT_FILE = args.check
     CHECKPOINT_DIR = args.checkpoint_dir
     BATCH_SIZE = args.batch_size
@@ -289,7 +301,24 @@ def main():
         softL_c = 0.0
     print('Soft Labeling: ', softL_c)
 
-
+    def parse_list(arglist, default):
+        v1, v2, v3, v4 = default
+        if len(arglist) == 1:
+            v1 = v2 = v3 = v4 = arglist[0]
+        elif len(arglist) == 2:
+            v1 = v2 = arglist[0]
+            v3 = v4 = arglist[1]
+        elif len(arglist) == 3:
+            v1 = arglist[0]
+            v2 = arglist[1]
+            v3 = v4 = arglist[2]
+        elif len(arglist) > 3:
+            v1, v2, v3, v4 = arglist[:4]
+        return v1, v2, v3, v4
+    OPTIM_PARAMS['start_lr'] = parse_list(args.start_lr, OPTIM_PARAMS['start_lr'])
+    OPTIM_PARAMS['end_lr'] = parse_list(args.end_lr, OPTIM_PARAMS['end_lr'])
+    OPTIM_PARAMS['momentum'] = parse_list(args.momentum, OPTIM_PARAMS['momentum'])
+    OPTIM_PARAMS['lr_decay_start'] = parse_list(args.lr_decay_start, OPTIM_PARAMS['lr_decay_start'])
     sess = tf.Session()
 
     # DEFINE OUR MODEL AND LOSS FUNCTIONS
@@ -386,13 +415,18 @@ def main():
             loss, global_step=global_step, var_list=variables))
         return learning_step, lr_sum
 
-    DX_optim, DX_lr = adam(DX_loss, DX_vars, LEARNING_RATE, args.end_lr, args.lr_decay_start, MOMENTUM, 'D_X')
+    print('Optimizing using {}'.format(OPTIM_PARAMS))
+    DX_optim, DX_lr = adam(DX_loss, DX_vars,
+                           OPTIM_PARAMS['start_lr'][2], OPTIM_PARAMS['end_lr'][2], OPTIM_PARAMS['lr_decay_start'][2], OPTIM_PARAMS['momentum'][2], 'D_X')
 
-    DY_optim, DY_lr = adam(DY_loss, DY_vars, LEARNING_RATE, args.end_lr, args.lr_decay_start, MOMENTUM, 'D_Y')
+    DY_optim, DY_lr = adam(DY_loss, DY_vars,
+                           OPTIM_PARAMS['start_lr'][3], OPTIM_PARAMS['end_lr'][3], OPTIM_PARAMS['lr_decay_start'][3], OPTIM_PARAMS['momentum'][3], 'D_Y')
 
-    G_optim, G_lr = adam(g_loss_G, g_vars_G, LEARNING_RATE, args.end_lr, args.lr_decay_start, MOMENTUM, 'G')
+    G_optim, G_lr = adam(g_loss_G, g_vars_G,
+                         OPTIM_PARAMS['start_lr'][1], OPTIM_PARAMS['end_lr'][1], OPTIM_PARAMS['lr_decay_start'][1], OPTIM_PARAMS['momentum'][1], 'G')
 
-    F_optim, F_lr = adam(g_loss_F, g_vars_F, LEARNING_RATE, args.end_lr, args.lr_decay_start, MOMENTUM, 'F')
+    F_optim, F_lr = adam(g_loss_F, g_vars_F,
+                         OPTIM_PARAMS['start_lr'][0], OPTIM_PARAMS['end_lr'][0], OPTIM_PARAMS['lr_decay_start'][0], OPTIM_PARAMS['momentum'][0], 'F')
 
     G_sum = tf.summary.merge(
         [G_loss_sum, G_lr]
